@@ -120,8 +120,8 @@ type LoadTestRow = {
   finished_at: number | null;
 };
 
-let db: Database.Database;
-let historyDb: Database.Database;
+let db!: Database.Database;
+let historyDb!: Database.Database;
 
 function initializeDatabases() {
   ensureDataDir();
