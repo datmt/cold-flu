@@ -1,6 +1,6 @@
 import { v4 as uuid } from 'uuid';
 
-import db from '@/lib/db';
+import { historyDb } from '@/lib/db';
 
 import type { StepResult } from './interpolate';
 
@@ -35,7 +35,7 @@ export function buildCacheKey(
 }
 
 export function getCache(stepId: string, cacheKey: string): CachedResponseRow | null {
-  const row = db
+  const row = historyDb
     .prepare(
       `SELECT *
        FROM step_cache
@@ -57,7 +57,7 @@ export function setCache(
   ttlSeconds: number,
 ): void {
   const now = Date.now();
-  db.prepare(
+  historyDb.prepare(
     `INSERT INTO step_cache (
       id, step_id, cache_key, response_status, response_headers, response_body, cached_at, expires_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)

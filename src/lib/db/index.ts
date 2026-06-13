@@ -24,18 +24,22 @@ import type {
 } from '@/lib/types';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
-const DB_PATH = path.join(DATA_DIR, 'app.db');
-const SCHEMA_PATH = path.join(process.cwd(), 'src', 'lib', 'db', 'schema.sql');
+const CONFIG_DB_PATH = path.join(DATA_DIR, 'app.db');
+const HISTORY_DB_PATH = path.join(DATA_DIR, 'history.db');
+const CONFIG_SCHEMA_PATH = path.join(process.cwd(), 'src', 'lib', 'db', 'schema.sql');
+const HISTORY_SCHEMA_PATH = path.join(process.cwd(), 'src', 'lib', 'db', 'schema-history.sql');
 
-const alterStatements = [
+const configAlterStatements = [
   "ALTER TABLE steps ADD COLUMN type TEXT NOT NULL DEFAULT 'curl'",
   "ALTER TABLE steps ADD COLUMN transform_code TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE steps ADD COLUMN position_x REAL NOT NULL DEFAULT 0",
   "ALTER TABLE steps ADD COLUMN position_y REAL NOT NULL DEFAULT 0",
-  "ALTER TABLE step_dependencies ADD COLUMN source_handle TEXT",
   "ALTER TABLE environments ADD COLUMN functions TEXT NOT NULL DEFAULT ''",
-  "ALTER TABLE runs ADD COLUMN load_test_id TEXT REFERENCES load_tests(id) ON DELETE SET NULL",
 ];
+
+function ensureDataDir() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
 
 type EnvironmentRow = {
   id: string;
@@ -104,27 +108,39 @@ type RunStepRow = {
   finished_at: number | null;
 };
 
-function ensureDataDir() {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+type LoadTestRow = {
+  id: string;
+  chain_id: string;
+  total: number;
+  concurrency: number;
+  status: LoadTestStatus;
+  completed: number;
+  failed: number;
+  started_at: number;
+  finished_at: number | null;
+};
 
-function initializeDatabase() {
+let db: Database.Database;
+let historyDb: Database.Database;
+
+function initializeDatabases() {
   ensureDataDir();
 
-  const instance = new Database(DB_PATH);
-  instance.pragma('journal_mode = WAL');
-  instance.pragma('foreign_keys = ON');
+  // Config database
+  const configInstance = new Database(CONFIG_DB_PATH);
+  configInstance.pragma('journal_mode = WAL');
+  configInstance.pragma('foreign_keys = ON');
 
-  const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
-  instance.exec(schema);
+  const configSchema = fs.readFileSync(CONFIG_SCHEMA_PATH, 'utf8');
+  configInstance.exec(configSchema);
 
-  for (const sql of alterStatements) {
+  for (const sql of configAlterStatements) {
     try {
-      instance.exec(sql);
+      configInstance.exec(sql);
     } catch {}
   }
 
-  instance.exec(`
+  configInstance.exec(`
     CREATE TABLE IF NOT EXISTS step_dependencies (
       step_id TEXT NOT NULL,
       depends_on_step_id TEXT NOT NULL,
@@ -135,26 +151,33 @@ function initializeDatabase() {
     )
   `);
 
-  instance.exec(`
-    CREATE TABLE IF NOT EXISTS load_tests (
-      id TEXT PRIMARY KEY,
-      chain_id TEXT NOT NULL REFERENCES chains(id) ON DELETE CASCADE,
-      total INTEGER NOT NULL,
-      concurrency INTEGER NOT NULL,
-      status TEXT NOT NULL DEFAULT 'running',
-      completed INTEGER NOT NULL DEFAULT 0,
-      failed INTEGER NOT NULL DEFAULT 0,
-      started_at INTEGER NOT NULL,
-      finished_at INTEGER
-    )
-  `);
+  // History database
+  const historyInstance = new Database(HISTORY_DB_PATH);
+  historyInstance.pragma('journal_mode = WAL');
+  historyInstance.pragma('foreign_keys = OFF');
 
-  return instance;
+  const historySchema = fs.readFileSync(HISTORY_SCHEMA_PATH, 'utf8');
+  historyInstance.exec(historySchema);
+
+  // Migrate load_tests if it has a stale FK to chains (chains lives in configDb, not historyDb)
+  const loadTestFks = historyInstance.pragma('foreign_key_list(load_tests)') as { table: string }[];
+  if (loadTestFks.some((fk) => fk.table === 'chains')) {
+    historyInstance.exec('CREATE TABLE load_tests_new (id TEXT PRIMARY KEY, chain_id TEXT NOT NULL, total INTEGER NOT NULL, concurrency INTEGER NOT NULL, status TEXT NOT NULL DEFAULT \'running\', completed INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0, started_at INTEGER NOT NULL, finished_at INTEGER)');
+    historyInstance.exec('INSERT OR IGNORE INTO load_tests_new SELECT id, chain_id, total, concurrency, status, completed, failed, started_at, finished_at FROM load_tests');
+    historyInstance.exec('DROP TABLE load_tests');
+    historyInstance.exec('ALTER TABLE load_tests_new RENAME TO load_tests');
+  }
+
+  historyInstance.pragma('foreign_keys = ON');
+
+  db = configInstance;
+  historyDb = historyInstance;
 }
 
-const db = initializeDatabase();
+initializeDatabases();
 
 export default db;
+export { historyDb };
 
 function normalizeStepType(value?: string | null): StepType {
   if (value === 'transform') return 'transform';
@@ -241,6 +264,20 @@ function mapRunStep(row: RunStepRow): RunStep {
     error: row.error,
     started_at: row.started_at,
     finished_at: row.finished_at,
+  };
+}
+
+function mapLoadTest(row: LoadTestRow): LoadTest {
+  return {
+    id: row.id,
+    chain_id: row.chain_id,
+    total: row.total,
+    concurrency: row.concurrency,
+    status: row.status,
+    completed: row.completed,
+    failed: row.failed,
+    started_at: row.started_at,
+    finished_at: row.finished_at ?? null,
   };
 }
 
@@ -651,12 +688,17 @@ export function deleteStep(id: string): boolean {
 
   db.transaction(() => {
     db.prepare('DELETE FROM step_dependencies WHERE step_id = ? OR depends_on_step_id = ?').run(id, id);
-    db.prepare('DELETE FROM step_cache WHERE step_id = ?').run(id);
+    historyDb.prepare('DELETE FROM step_cache WHERE step_id = ?').run(id);
     db.prepare('DELETE FROM steps WHERE id = ?').run(id);
     rebalanceStepOrder(existing.chain_id);
   })();
 
   return true;
+}
+
+export function clearStepCache(stepId: string): boolean {
+  const result = historyDb.prepare('DELETE FROM step_cache WHERE step_id = ?').run(stepId);
+  return result.changes > 0;
 }
 
 export function listStepDependencies(stepId: string): StepDependency[] {
@@ -769,13 +811,8 @@ export function saveChainGraph(
   })();
 }
 
-export function clearStepCache(stepId: string): boolean {
-  const result = db.prepare('DELETE FROM step_cache WHERE step_id = ?').run(stepId);
-  return result.changes > 0;
-}
-
 export function listRuns(chainId: string): ChainRun[] {
-  const rows = db
+  const rows = historyDb
     .prepare(
       `SELECT r.*,
               SUM(CASE WHEN rs.status != 'stale' THEN 1 ELSE 0 END) AS total_steps,
@@ -795,7 +832,7 @@ export function listRuns(chainId: string): ChainRun[] {
 export const listRunsForChain = listRuns;
 
 export function getRun(id: string): ChainRunDetail | null {
-  const runRow = db
+  const runRow = historyDb
     .prepare(
       `SELECT r.*,
               SUM(CASE WHEN rs.status != 'stale' THEN 1 ELSE 0 END) AS total_steps,
@@ -812,7 +849,7 @@ export function getRun(id: string): ChainRunDetail | null {
     return null;
   }
 
-  const steps = db
+  const steps = historyDb
     .prepare('SELECT * FROM run_steps WHERE run_id = ? ORDER BY order_index ASC, started_at ASC, step_name ASC')
     .all(id) as RunStepRow[];
 
@@ -853,7 +890,7 @@ export function exportChain(id: string): ChainExport | null {
 export function importChain(payload: ChainExport): ChainDetail {
   const newChain = createChain({ name: payload.name, description: payload.description });
 
-  // Map old ref → new step id so we can wire up dependencies.
+  // Map old ref -> new step id so we can wire up dependencies.
   const refToId = new Map<string, string>();
 
   for (const s of payload.steps) {
@@ -902,60 +939,33 @@ export function duplicateChain(id: string): ChainDetail | null {
   return importChain({ ...exported, name: `Copy of ${exported.name}` });
 }
 
-// ---------------------------------------------------------------------------
-// Load tests
-// ---------------------------------------------------------------------------
-
-type LoadTestRow = {
-  id: string;
-  chain_id: string;
-  total: number;
-  concurrency: number;
-  status: LoadTestStatus;
-  completed: number;
-  failed: number;
-  started_at: number;
-  finished_at: number | null;
-};
-
-function mapLoadTest(row: LoadTestRow): LoadTest {
-  return {
-    id: row.id,
-    chain_id: row.chain_id,
-    total: row.total,
-    concurrency: row.concurrency,
-    status: row.status,
-    completed: row.completed,
-    failed: row.failed,
-    started_at: row.started_at,
-    finished_at: row.finished_at ?? null,
-  };
-}
+// ------ Load tests
+// ------------------------------
 
 export function createLoadTest(chainId: string, total: number, concurrency: number): LoadTest {
   const id = uuid();
   const now = Date.now();
-  db.prepare(
+  historyDb.prepare(
     'INSERT INTO load_tests (id, chain_id, total, concurrency, status, completed, failed, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   ).run(id, chainId, total, concurrency, 'running', 0, 0, now);
   return getLoadTest(id)!;
 }
 
 export function getLoadTest(id: string): LoadTest | null {
-  const row = db.prepare('SELECT * FROM load_tests WHERE id = ?').get(id) as LoadTestRow | undefined;
+  const row = historyDb.prepare('SELECT * FROM load_tests WHERE id = ?').get(id) as LoadTestRow | undefined;
   return row ? mapLoadTest(row) : null;
 }
 
 export function incrementLoadTestProgress(id: string, outcome: 'completed' | 'failed'): void {
   const col = outcome === 'completed' ? 'completed' : 'failed';
-  db.prepare(`UPDATE load_tests SET ${col} = ${col} + 1 WHERE id = ?`).run(id);
+  historyDb.prepare(`UPDATE load_tests SET ${col} = ${col} + 1 WHERE id = ?`).run(id);
 }
 
 export function finalizeLoadTest(id: string): void {
-  const row = db.prepare('SELECT * FROM load_tests WHERE id = ?').get(id) as LoadTestRow | undefined;
+  const row = historyDb.prepare('SELECT * FROM load_tests WHERE id = ?').get(id) as LoadTestRow | undefined;
   if (!row) return;
   const status: LoadTestStatus = row.failed > 0 ? 'failed' : 'completed';
-  db.prepare('UPDATE load_tests SET status = ?, finished_at = ? WHERE id = ?').run(
+  historyDb.prepare('UPDATE load_tests SET status = ?, finished_at = ? WHERE id = ?').run(
     status,
     Date.now(),
     id,
@@ -963,7 +973,7 @@ export function finalizeLoadTest(id: string): void {
 }
 
 export function listLoadTestRuns(loadTestId: string): ChainRun[] {
-  const rows = db
+  const rows = historyDb
     .prepare(
       `SELECT r.*,
               SUM(CASE WHEN rs.status != 'stale' THEN 1 ELSE 0 END) AS total_steps,
@@ -980,14 +990,14 @@ export function listLoadTestRuns(loadTestId: string): ChainRun[] {
 }
 
 export function cancelLoadTest(id: string): boolean {
-  const result = db
+  const result = historyDb
     .prepare("UPDATE load_tests SET status = 'cancelled', finished_at = ? WHERE id = ? AND status = 'running'")
     .run(Date.now(), id);
   return result.changes > 0;
 }
 
 export function listLoadTestsForChain(chainId: string): LoadTest[] {
-  const rows = db
+  const rows = historyDb
     .prepare('SELECT * FROM load_tests WHERE chain_id = ? ORDER BY started_at DESC')
     .all(chainId) as LoadTestRow[];
   return rows.map(mapLoadTest);

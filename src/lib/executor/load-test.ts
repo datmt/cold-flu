@@ -1,6 +1,6 @@
 import { v4 as uuid } from 'uuid';
 
-import db from '@/lib/db';
+import db, { historyDb } from '@/lib/db';
 import {
   cancelLoadTest,
   createLoadTest,
@@ -70,7 +70,7 @@ async function runLoadTest(loadTest: LoadTest): Promise<void> {
         launched++;
 
         const runId = uuid();
-        db.prepare('INSERT INTO runs (id, chain_id, load_test_id, status, started_at) VALUES (?, ?, ?, ?, ?)').run(
+        historyDb.prepare('INSERT INTO runs (id, chain_id, load_test_id, status, started_at) VALUES (?, ?, ?, ?, ?)').run(
           runId,
           chainId,
           loadTestId,
@@ -80,12 +80,12 @@ async function runLoadTest(loadTest: LoadTest): Promise<void> {
 
         executeChain(chainId, runId)
           .then(() => {
-            const row = db.prepare('SELECT status FROM runs WHERE id = ?').get(runId) as
+            const row = historyDb.prepare('SELECT status FROM runs WHERE id = ?').get(runId) as
               | { status: string }
               | undefined;
             const outcome = row?.status === 'failed' ? 'failed' : 'completed';
             // Only count progress if not already cancelled in the DB.
-            const lt = db.prepare('SELECT status FROM load_tests WHERE id = ?').get(loadTestId) as
+            const lt = historyDb.prepare('SELECT status FROM load_tests WHERE id = ?').get(loadTestId) as
               | { status: string }
               | undefined;
             if (lt?.status === 'running') {
@@ -93,7 +93,7 @@ async function runLoadTest(loadTest: LoadTest): Promise<void> {
             }
           })
           .catch(() => {
-            const lt = db.prepare('SELECT status FROM load_tests WHERE id = ?').get(loadTestId) as
+            const lt = historyDb.prepare('SELECT status FROM load_tests WHERE id = ?').get(loadTestId) as
               | { status: string }
               | undefined;
             if (lt?.status === 'running') {

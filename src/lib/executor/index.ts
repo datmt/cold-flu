@@ -1,6 +1,6 @@
 import { v4 as uuid } from 'uuid';
 
-import db from '@/lib/db';
+import db, { historyDb } from '@/lib/db';
 import { getGlobalFunctions } from '@/lib/db';
 
 import { buildCacheKey, getCache, setCache } from './cache';
@@ -191,7 +191,7 @@ async function executeStepsWithDependencies(
         const runStepId = uuid();
         const startedAt = Date.now();
 
-        db.prepare(
+        historyDb.prepare(
           `INSERT INTO run_steps (
             id, run_id, step_id, step_name, order_index, status, started_at
           ) VALUES (?, ?, ?, ?, ?, 'running', ?)`,
@@ -286,22 +286,22 @@ async function executeStepsWithDependencies(
           // Treat HTTP 4xx/5xx as step failures so dependent steps are blocked
           if (step.type === 'curl' && result.status >= 400) {
             failed.add(step.id);
-            db.prepare(
-              `UPDATE run_steps
-               SET status = 'failed',
-                   error = ?,
-                   resolved_curl = ?,
-                   request_method = ?,
-                   request_url = ?,
-                   request_headers = ?,
-                   request_body = ?,
-                   response_status = ?,
-                   response_headers = ?,
-                   response_body = ?,
-                   from_cache = ?,
-                   finished_at = ?
-               WHERE id = ?`,
-            ).run(
+          historyDb.prepare(
+            `UPDATE run_steps
+             SET status = 'failed',
+                 error = ?,
+                 resolved_curl = ?,
+                 request_method = ?,
+                 request_url = ?,
+                 request_headers = ?,
+                 request_body = ?,
+                 response_status = ?,
+                 response_headers = ?,
+                 response_body = ?,
+                 from_cache = ?,
+                 finished_at = ?
+             WHERE id = ?`,
+          ).run(
               `HTTP ${result.status}`,
               resolvedCurl,
               requestMethod,
@@ -321,7 +321,7 @@ async function executeStepsWithDependencies(
           storeStepResult(context, step, result);
           completed.add(step.id);
 
-          db.prepare(
+          historyDb.prepare(
             `UPDATE run_steps
              SET status = 'completed',
                  resolved_curl = ?,
@@ -357,7 +357,7 @@ async function executeStepsWithDependencies(
           if (cause && cause !== baseMessage) parts.push(`Caused by: ${cause}`);
           if (requestUrl) parts.push(`URL: ${requestUrl}`);
           const fullError = parts.join('\n');
-          db.prepare(
+          historyDb.prepare(
             `UPDATE run_steps
              SET status = 'failed',
                  error = ?,
@@ -399,7 +399,7 @@ async function executeStepsWithDependencies(
   }
 
   const finalStatus = failed.size > 0 ? 'failed' : 'completed';
-  db.prepare('UPDATE runs SET status = ?, finished_at = ?, error = ? WHERE id = ?').run(
+  historyDb.prepare('UPDATE runs SET status = ?, finished_at = ?, error = ? WHERE id = ?').run(
     finalStatus,
     Date.now(),
     failed.size > 0 ? 'One or more steps failed.' : null,
@@ -421,7 +421,7 @@ export function startChainExecution(chainId: string): string {
   if (count === 0) throw new Error('No steps in chain');
 
   const runId = uuid();
-  db.prepare('INSERT INTO runs (id, chain_id, status, started_at) VALUES (?, ?, ?, ?)').run(
+  historyDb.prepare('INSERT INTO runs (id, chain_id, status, started_at) VALUES (?, ?, ?, ?)').run(
     runId,
     chainId,
     'running',
@@ -450,7 +450,7 @@ export async function executeChain(chainId: string, preCreatedRunId?: string): P
 
   const runId = preCreatedRunId ?? uuid();
   if (!preCreatedRunId) {
-    db.prepare('INSERT INTO runs (id, chain_id, status, started_at) VALUES (?, ?, ?, ?)').run(
+    historyDb.prepare('INSERT INTO runs (id, chain_id, status, started_at) VALUES (?, ?, ?, ?)').run(
       runId,
       chainId,
       'running',
@@ -480,7 +480,7 @@ export function startStepExecution(stepId: string): string {
   const stepsToRun = [step];
 
   const runId = uuid();
-  db.prepare('INSERT INTO runs (id, chain_id, status, started_at) VALUES (?, ?, ?, ?)').run(
+  historyDb.prepare('INSERT INTO runs (id, chain_id, status, started_at) VALUES (?, ?, ?, ?)').run(
     runId,
     chain.id,
     'running',
@@ -489,7 +489,7 @@ export function startStepExecution(stepId: string): string {
 
   const staleRows = steps.filter((item) => item.id !== step.id);
   if (staleRows.length > 0) {
-    const insert = db.prepare(
+    const insert = historyDb.prepare(
       `INSERT INTO run_steps (
         id, run_id, step_id, step_name, order_index, status
       ) VALUES (?, ?, ?, ?, ?, 'stale')`,
