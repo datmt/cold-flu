@@ -11,6 +11,7 @@ import { lineNumbers } from '@codemirror/view';
 
 import VariableHelper from '@/components/VariableHelper';
 import { DEFAULT_CONDITION_CODE, DEFAULT_TRANSFORM_CODE } from '@/lib/steps';
+import { parseCurl } from '@/lib/executor/curl-parser';
 import type { Step, StepType } from '@/lib/types';
 
 interface StepEditPanelProps {
@@ -59,78 +60,16 @@ const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'
 
 function parseCurlToParts(curlTemplate: string): CurlParts {
   try {
-    // Normalize line continuations
-    const normalized = curlTemplate.replace(/\\\r?\n/g, ' ').replace(/\r?\n/g, ' ').trim();
-    const tokens = tokenizeCurl(normalized);
-    if (tokens[0]?.toLowerCase() === 'curl') tokens.shift();
-
-    let method = '';
-    let url = '';
-    const headers: { key: string; value: string }[] = [];
-    let body = '';
-
-    for (let i = 0; i < tokens.length; i++) {
-      const t = tokens[i];
-      if (t === '-X' || t === '--request') { method = (tokens[++i] ?? '').toUpperCase(); }
-      else if (t === '-H' || t === '--header') {
-        const raw = tokens[++i] ?? '';
-        const colon = raw.indexOf(':');
-        if (colon > 0) headers.push({ key: raw.slice(0, colon).trim(), value: raw.slice(colon + 1).trim() });
-        else headers.push({ key: raw.trim(), value: '' });
-      } else if (['-d', '--data', '--data-raw', '--data-binary', '--data-ascii', '--json'].includes(t)) {
-        body = tokens[++i] ?? '';
-      } else if (!t.startsWith('-') && !url) {
-        url = t;
-      }
-    }
-    return { method: method || (body ? 'POST' : 'GET'), url, headers, body };
+    const parsed = parseCurl(curlTemplate);
+    return {
+      method: parsed.method,
+      url: parsed.url,
+      headers: Object.entries(parsed.headers).map(([key, value]) => ({ key, value })),
+      body: parsed.body ?? '',
+    };
   } catch {
     return { method: 'GET', url: '', headers: [], body: '' };
   }
-}
-
-function tokenizeCurl(cmd: string): string[] {
-  const tokens: string[] = [];
-  let cur = '';
-  let state: 'normal' | 'single' | 'double' = 'normal';
-  let started = false;
-  for (let i = 0; i < cmd.length; i++) {
-    const ch = cmd[i];
-    if (state === 'normal') {
-      if (/\s/.test(ch)) { if (started) { tokens.push(cur); cur = ''; started = false; } }
-      else if (ch === "'") { state = 'single'; started = true; }
-      else if (ch === '"') { state = 'double'; started = true; }
-      else if (ch === '\\' && cmd[i + 1]) { cur += cmd[++i]; started = true; }
-      else { cur += ch; started = true; }
-    } else if (state === 'single') {
-      // Single-quoted strings: no escape sequences, only ' ends the token
-      if (ch === "'") state = 'normal'; else cur += ch;
-    } else {
-      // Double-quoted strings: decode JSON/shell escape sequences
-      if (ch === '"') {
-        state = 'normal';
-      } else if (ch === '\\' && i + 1 < cmd.length) {
-        const next = cmd[++i];
-        switch (next) {
-          case 'n': cur += '\n'; break;
-          case 't': cur += '\t'; break;
-          case 'r': cur += '\r'; break;
-          case 'u': {
-            // \uXXXX unicode escape
-            const hex = cmd.slice(i + 1, i + 5);
-            if (/^[0-9a-fA-F]{4}$/.test(hex)) { cur += String.fromCharCode(parseInt(hex, 16)); i += 4; }
-            else cur += next;
-            break;
-          }
-          default: cur += next; // handles \" \\ \/ and anything else
-        }
-      } else {
-        cur += ch;
-      }
-    }
-  }
-  if (started) tokens.push(cur);
-  return tokens;
 }
 
 function buildCurlFromParts(parts: CurlParts): string {

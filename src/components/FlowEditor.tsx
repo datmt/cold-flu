@@ -399,6 +399,31 @@ export default function FlowEditor({
     [chainId, nodes, setNodes],
   );
 
+  const [editPanelWidth, setEditPanelWidth] = useState(440);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isResizing = useRef(false);
+
+  const handleResizeStart = useCallback((e: ReactMouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+
+    const onMouseMove = (ev: globalThis.MouseEvent) => {
+      if (!isResizing.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const newWidth = rect.right - ev.clientX;
+      setEditPanelWidth(Math.max(280, Math.min(newWidth, rect.width - 300)));
+    };
+
+    const onMouseUp = () => {
+      isResizing.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, []);
+
   const [curlModalOpen, setCurlModalOpen] = useState(false);
   const [curlModalName, setCurlModalName] = useState('');
   const [curlModalTemplate, setCurlModalTemplate] = useState('');
@@ -492,8 +517,8 @@ export default function FlowEditor({
   );
 
   return (
-    <div className="grid h-[72vh] grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] overflow-hidden rounded-2xl border border-gray-800 bg-gray-900 shadow-2xl shadow-black/20">
-      <div className="flex min-h-0 flex-col border-r border-gray-800">
+    <div ref={containerRef} className="flex h-[72vh] overflow-hidden rounded-2xl border border-gray-800 bg-gray-900 shadow-2xl shadow-black/20">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-800 px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -573,7 +598,13 @@ export default function FlowEditor({
         </div>
       </div>
 
-      <div className="min-h-0 p-4">
+      {/* resize handle */}
+      <div
+        onMouseDown={handleResizeStart}
+        className="w-1 cursor-col-resize bg-gray-800 transition-colors hover:bg-indigo-500 active:bg-indigo-400 select-none"
+      />
+
+      <div className="min-h-0 overflow-y-auto p-4" style={{ width: editPanelWidth, flexShrink: 0 }}>
         <StepEditPanel
           step={selectedStep}
           envVariables={envVariables}
