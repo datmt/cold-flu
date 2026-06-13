@@ -77,8 +77,44 @@ export default function EnvironmentEditorPage() {
     [rows],
   );
 
+  const [importText, setImportText] = useState("");
+  const [showImport, setShowImport] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState(false);
+
   const updateRow = (rowId: string, field: keyof Omit<VariableRow, "id">, value: string) => {
     setRows((current) => current.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)));
+  };
+
+  const exportToClipboard = async () => {
+    const text = rows
+      .filter((row) => row.key.trim())
+      .map((row) => `${row.key.trim()}=${row.value}`)
+      .join(";");
+    await navigator.clipboard.writeText(text);
+    setCopyFeedback(true);
+    setTimeout(() => setCopyFeedback(false), 1500);
+  };
+
+  const importFromText = () => {
+    const pairs = importText.split(";").map((s) => s.trim()).filter(Boolean);
+    const newRows: VariableRow[] = pairs.flatMap((pair) => {
+      const eqIdx = pair.indexOf("=");
+      if (eqIdx < 1) return [];
+      return [{ id: crypto.randomUUID(), key: pair.slice(0, eqIdx).trim(), value: pair.slice(eqIdx + 1) }];
+    });
+    if (newRows.length === 0) return;
+    setRows((current) => {
+      const existing = current.filter((r) => r.key.trim());
+      const merged = [...existing];
+      for (const nr of newRows) {
+        const idx = merged.findIndex((r) => r.key === nr.key);
+        if (idx >= 0) merged[idx] = nr;
+        else merged.push(nr);
+      }
+      return merged;
+    });
+    setImportText("");
+    setShowImport(false);
   };
 
   const save = async () => {
@@ -136,11 +172,54 @@ export default function EnvironmentEditorPage() {
         </div>
 
         <div className="rounded-2xl border border-gray-800 bg-gray-950/70 p-4">
-          <div className="mb-4 grid grid-cols-[1fr_1fr_auto] gap-3 text-xs uppercase tracking-[0.3em] text-gray-500">
-            <span>Key</span>
-            <span>Value</span>
-            <span />
+          <div className="mb-4 flex items-center gap-3">
+            <span className="flex-1 text-xs uppercase tracking-[0.3em] text-gray-500">Key</span>
+            <span className="flex-1 text-xs uppercase tracking-[0.3em] text-gray-500">Value</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => void exportToClipboard()}
+                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:border-indigo-500/50 hover:text-indigo-300"
+              >
+                {copyFeedback ? "Copied!" : "Export All"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowImport((v) => !v)}
+                className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs font-medium text-gray-300 transition hover:border-indigo-500/50 hover:text-indigo-300"
+              >
+                Import
+              </button>
+            </div>
           </div>
+          {showImport && (
+            <div className="mb-4 rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3 space-y-2">
+              <p className="text-xs text-gray-400">Paste semicolon-separated <code className="rounded bg-gray-800 px-1 text-indigo-300">KEY=VALUE;KEY2=VALUE2</code> — existing keys will be overwritten.</p>
+              <div className="flex gap-2">
+                <input
+                  value={importText}
+                  onChange={(e) => setImportText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") importFromText(); }}
+                  placeholder="KEY1=value1;KEY2=value2"
+                  className="flex-1 rounded-xl border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-100 outline-none transition focus:border-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={importFromText}
+                  className="rounded-xl bg-indigo-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-400"
+                >
+                  Import
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowImport(false); setImportText(""); }}
+                  className="rounded-xl border border-gray-700 px-3 py-2 text-sm text-gray-400 transition hover:text-gray-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
           <div className="space-y-3">
             {rows.map((row) => (
               <div key={row.id} className="grid grid-cols-[1fr_1fr_auto] gap-3">
