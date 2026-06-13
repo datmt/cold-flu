@@ -154,10 +154,19 @@ function initializeDatabases() {
   // History database
   const historyInstance = new Database(HISTORY_DB_PATH);
   historyInstance.pragma('journal_mode = WAL');
+  // Wait up to 5 s when writers contend instead of failing immediately with SQLITE_BUSY
+  historyInstance.pragma('busy_timeout = 5000');
   historyInstance.pragma('foreign_keys = OFF');
 
   const historySchema = fs.readFileSync(HISTORY_SCHEMA_PATH, 'utf8');
   historyInstance.exec(historySchema);
+
+  // Indexes that make JOIN-heavy queries fast as history grows under load tests
+  // Composite (chain_id, started_at) lets ORDER BY + LIMIT skip a sort pass
+  historyInstance.exec('CREATE INDEX IF NOT EXISTS idx_runs_chain_started ON runs(chain_id, started_at DESC)');
+  historyInstance.exec('CREATE INDEX IF NOT EXISTS idx_runs_load_test_id ON runs(load_test_id)');
+  historyInstance.exec('CREATE INDEX IF NOT EXISTS idx_run_steps_run_id ON run_steps(run_id)');
+  historyInstance.exec('CREATE INDEX IF NOT EXISTS idx_load_tests_chain_id ON load_tests(chain_id)');
 
   // Migrate load_tests if it has a stale FK to chains (chains lives in configDb, not historyDb)
   const loadTestFks = historyInstance.pragma('foreign_key_list(load_tests)') as { table: string }[];
@@ -811,20 +820,27 @@ export function saveChainGraph(
   })();
 }
 
-export function listRuns(chainId: string): ChainRun[] {
+export function listRuns(chainId: string, limit = 50, offset = 0): ChainRun[] {
+  // Paginate runs first (inner subquery uses idx_runs_chain_started to skip a sort),
+  // then aggregate run_steps only for those rows. Without this, GROUP BY forces SQLite
+  // to join and aggregate every run before LIMIT is applied.
   const rows = historyDb
     .prepare(
       `SELECT r.*,
               SUM(CASE WHEN rs.status != 'stale' THEN 1 ELSE 0 END) AS total_steps,
               SUM(CASE WHEN rs.status = 'completed' THEN 1 ELSE 0 END) AS completed_steps,
               SUM(CASE WHEN rs.status = 'failed' THEN 1 ELSE 0 END) AS failed_steps
-       FROM runs r
+       FROM (
+         SELECT * FROM runs
+         WHERE chain_id = ?
+         ORDER BY started_at DESC
+         LIMIT ? OFFSET ?
+       ) r
        LEFT JOIN run_steps rs ON rs.run_id = r.id
-       WHERE r.chain_id = ?
        GROUP BY r.id
        ORDER BY r.started_at DESC`,
     )
-    .all(chainId) as ChainRunRow[];
+    .all(chainId, limit, offset) as ChainRunRow[];
 
   return rows.map(mapRun);
 }
@@ -972,20 +988,24 @@ export function finalizeLoadTest(id: string): void {
   );
 }
 
-export function listLoadTestRuns(loadTestId: string): ChainRun[] {
+export function listLoadTestRuns(loadTestId: string, limit = 100, offset = 0): ChainRun[] {
   const rows = historyDb
     .prepare(
       `SELECT r.*,
               SUM(CASE WHEN rs.status != 'stale' THEN 1 ELSE 0 END) AS total_steps,
               SUM(CASE WHEN rs.status = 'completed' THEN 1 ELSE 0 END) AS completed_steps,
               SUM(CASE WHEN rs.status = 'failed' THEN 1 ELSE 0 END) AS failed_steps
-       FROM runs r
+       FROM (
+         SELECT * FROM runs
+         WHERE load_test_id = ?
+         ORDER BY started_at DESC
+         LIMIT ? OFFSET ?
+       ) r
        LEFT JOIN run_steps rs ON rs.run_id = r.id
-       WHERE r.load_test_id = ?
        GROUP BY r.id
        ORDER BY r.started_at DESC`,
     )
-    .all(loadTestId) as ChainRunRow[];
+    .all(loadTestId, limit, offset) as ChainRunRow[];
   return rows.map(mapRun);
 }
 

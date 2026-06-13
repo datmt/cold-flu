@@ -52,7 +52,7 @@ export default function ChainPage({ params }: ChainPageProps) {
   }, [id]);
 
   const loadRuns = useCallback(async () => {
-    const nextRuns = await apiFetch<ChainRun[]>(`/api/chains/${id}/runs`);
+    const nextRuns = await apiFetch<ChainRun[]>(`/api/chains/${id}/runs?limit=50`);
     setRuns(nextRuns);
     return nextRuns;
   }, [id]);
@@ -434,6 +434,7 @@ export default function ChainPage({ params }: ChainPageProps) {
             selectedRunId={selectedRunId}
             selectedRun={selectedRun}
             onSelect={(runId) => void loadRun(runId)}
+            totalCapped={runs.length >= 50}
           />
         )}
       </div>
@@ -486,11 +487,12 @@ function RunButton({ run, selected, onClick }: { run: ChainRun; selected: boolea
   );
 }
 
-function OlderRunsModal({ runs, selectedRunId, onSelect, onClose }: {
+function OlderRunsModal({ runs, selectedRunId, onSelect, onClose, capped }: {
   runs: ChainRun[];
   selectedRunId: string | null;
   onSelect: (id: string) => void;
   onClose: () => void;
+  capped?: boolean;
 }) {
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
@@ -512,17 +514,21 @@ function OlderRunsModal({ runs, selectedRunId, onSelect, onClose }: {
             />
           ))}
         </div>
+        {capped && (
+          <p className="mt-3 text-center text-xs text-gray-500">Showing the 50 most recent runs. Older runs are not loaded.</p>
+        )}
       </div>
     </div>,
     document.body,
   );
 }
 
-function RunHistorySection({ runs, selectedRunId, selectedRun, onSelect }: {
+function RunHistorySection({ runs, selectedRunId, selectedRun, onSelect, totalCapped }: {
   runs: ChainRun[];
   selectedRunId: string | null;
   selectedRun: ChainRunDetail | null;
   onSelect: (id: string) => void;
+  totalCapped?: boolean;
 }) {
   const [modalOpen, setModalOpen] = useState(false);
   const visibleRuns = runs.slice(0, MAX_VISIBLE_RUNS);
@@ -547,7 +553,7 @@ function RunHistorySection({ runs, selectedRunId, selectedRun, onSelect }: {
                 onClick={() => setModalOpen(true)}
                 className="rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-400 transition hover:border-indigo-500 hover:text-indigo-300"
               >
-                +{olderRuns.length} older…
+                +{olderRuns.length} older{totalCapped ? " (capped at 50)" : ""}…
               </button>
             )}
           </>
@@ -562,6 +568,7 @@ function RunHistorySection({ runs, selectedRunId, selectedRun, onSelect }: {
           selectedRunId={selectedRunId}
           onSelect={onSelect}
           onClose={() => setModalOpen(false)}
+          capped={totalCapped}
         />
       )}
 
@@ -673,6 +680,16 @@ function LoadTestProgress({ loadTest, onDismiss, onViewRun, chainId, onStop }: {
     : Date.now() - loadTest.started_at;
   const rps = elapsed > 0 ? ((done / elapsed) * 1000).toFixed(1) : '—';
 
+  // Detect stale progress: track how long since `done` last changed.
+  const prevDoneRef = useRef(done);
+  const lastProgressRef = useRef(Date.now());
+  if (done !== prevDoneRef.current) {
+    prevDoneRef.current = done;
+    lastProgressRef.current = Date.now();
+  }
+  const secondsSinceProgress = Math.floor((Date.now() - lastProgressRef.current) / 1000);
+  const isStale = status === 'running' && secondsSinceProgress >= 5;
+
   const statusColor =
     status === 'completed' ? 'border-green-700 bg-green-950/30' :
     status === 'failed' ? 'border-red-700 bg-red-950/30' :
@@ -741,6 +758,11 @@ function LoadTestProgress({ loadTest, onDismiss, onViewRun, chainId, onStop }: {
         {loadTest.finished_at && (
           <span className="text-gray-500">
             {((loadTest.finished_at - loadTest.started_at) / 1000).toFixed(1)}s total
+          </span>
+        )}
+        {isStale && (
+          <span className="text-yellow-400 text-xs self-center">
+            ⚠ no progress for {secondsSinceProgress}s — executor may have stalled
           </span>
         )}
       </div>

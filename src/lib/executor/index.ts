@@ -71,6 +71,12 @@ function loadDependencies(stepIds: string[]): StepDependencyRow[] {
     .all(...stepIds, ...stepIds) as StepDependencyRow[];
 }
 
+const DEBUG = process.env.DEBUG_EXECUTOR === '1' || process.env.DEBUG_LOAD_TEST === '1';
+
+function dbg(...args: unknown[]) {
+  if (DEBUG) console.log('[EXECUTOR]', new Date().toISOString(), ...args);
+}
+
 async function executeStepsWithDependencies(
   steps: StepRow[],
   dependencies: StepDependencyRow[],
@@ -81,6 +87,9 @@ async function executeStepsWithDependencies(
   if (steps.length === 0) {
     throw new Error('No steps to run');
   }
+
+  dbg(`run=${runId} start steps=${steps.length} deps=${dependencies.length}`);
+  const execStart = Date.now();
 
   const context: ExecutionContext = { env, steps: {}, fns };
   const completed = new Set<string>();
@@ -185,11 +194,13 @@ async function executeStepsWithDependencies(
     }
 
     madeProgress = true;
+    dbg(`run=${runId} wave=${waveIndex} ready=${ready.map((s) => s.name).join(',')}`);
 
     await Promise.all(
       ready.map(async (step) => {
         const runStepId = uuid();
         const startedAt = Date.now();
+        dbg(`run=${runId} wave=${waveIndex} step="${step.name}" type=${step.type} starting`);
 
         historyDb.prepare(
           `INSERT INTO run_steps (
@@ -318,6 +329,7 @@ async function executeStepsWithDependencies(
             return;
           }
 
+          dbg(`run=${runId} step="${step.name}" completed status=${result.status} duration=${Date.now() - startedAt}ms`);
           storeStepResult(context, step, result);
           completed.add(step.id);
 
@@ -349,6 +361,7 @@ async function executeStepsWithDependencies(
             runStepId,
           );
         } catch (error) {
+          dbg(`run=${runId} step="${step.name}" FAILED duration=${Date.now() - startedAt}ms err=${String(error)}`);
           failed.add(step.id);
           const baseMessage = error instanceof Error ? error.message : String(error);
           const cause =
@@ -406,6 +419,7 @@ async function executeStepsWithDependencies(
     runId,
   );
 
+  dbg(`run=${runId} DONE status=${finalStatus} completed=${completed.size} failed=${failed.size} skipped=${skipped.size} total_duration=${Date.now() - execStart}ms`);
   return runId;
 }
 
@@ -510,7 +524,8 @@ function storeStepResult(context: ExecutionContext, step: StepRow, result: StepR
 }
 
 function recordFailedStep(runId: string, step: StepRow, waveIndex: number, error: string) {
-  db.prepare(
+  // run_steps lives in historyDb, not configDb
+  historyDb.prepare(
     `INSERT INTO run_steps (
       id, run_id, step_id, step_name, order_index, status, error, started_at, finished_at
     ) VALUES (?, ?, ?, ?, ?, 'failed', ?, ?, ?)`,
@@ -518,7 +533,8 @@ function recordFailedStep(runId: string, step: StepRow, waveIndex: number, error
 }
 
 function recordSkippedStep(runId: string, step: StepRow, waveIndex: number) {
-  db.prepare(
+  // run_steps lives in historyDb, not configDb
+  historyDb.prepare(
     `INSERT INTO run_steps (
       id, run_id, step_id, step_name, order_index, status, started_at, finished_at
     ) VALUES (?, ?, ?, ?, ?, 'skipped', ?, ?)`,
