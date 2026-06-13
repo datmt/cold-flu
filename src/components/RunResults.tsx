@@ -5,6 +5,121 @@ import { useMemo, useState, type ReactElement } from 'react';
 import type { ChainRunDetail, RunStep } from '@/lib/types';
 import { prettyJsonLike } from '@/lib/formatters';
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+function copyText(text: string): void {
+  void navigator.clipboard.writeText(text).catch(() => {
+    const el = document.createElement('textarea');
+    el.value = text;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+  });
+}
+
+function InlineCopyButton({ path }: { path: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        copyText(`{{${path}}}`);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className="ml-1 flex-shrink-0 rounded px-1 py-0 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400 hover:text-indigo-200 hover:bg-indigo-900/40"
+      title={`Copy {{${path}}}`}
+    >
+      {copied ? '✓' : '{{}}'}
+    </button>
+  );
+}
+
+function JsonTreeNode({ value, path, depth }: { value: JsonValue; path: string; depth: number }) {
+  const [collapsed, setCollapsed] = useState(depth >= 2);
+
+  if (value === null) return <span className="text-gray-500">null</span>;
+  if (typeof value === 'boolean') return <span className="text-yellow-300">{String(value)}</span>;
+  if (typeof value === 'number') return <span className="text-sky-300">{value}</span>;
+  if (typeof value === 'string') {
+    const display = value.length > 120 ? value.slice(0, 120) + '…' : value;
+    return <span className="text-green-300 break-all">"{display}"</span>;
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) return <span className="text-gray-500">[]</span>;
+    return (
+      <span>
+        <button type="button" onClick={() => setCollapsed((c) => !c)} className="text-gray-500 hover:text-gray-300">
+          {collapsed ? `[… ${value.length} items]` : '['}
+        </button>
+        {!collapsed && (
+          <>
+            <div className="ml-4 border-l border-gray-800 pl-2 space-y-0.5">
+              {value.map((item, i) => (
+                <div key={i} className="group flex items-start gap-1 min-w-0">
+                  <span className="flex-shrink-0 text-gray-600">[{i}]</span>
+                  <JsonTreeNode value={item as JsonValue} path={`${path}[${i}]`} depth={depth + 1} />
+                  <InlineCopyButton path={`${path}[${i}]`} />
+                </div>
+              ))}
+            </div>
+            <span className="text-gray-500">]</span>
+          </>
+        )}
+      </span>
+    );
+  }
+
+  const entries = Object.entries(value as Record<string, JsonValue>);
+  if (entries.length === 0) return <span className="text-gray-500">{'{}'}</span>;
+  return (
+    <span>
+      <button type="button" onClick={() => setCollapsed((c) => !c)} className="text-gray-500 hover:text-gray-300">
+        {collapsed ? `{ … ${entries.length} keys }` : '{'}
+      </button>
+      {!collapsed && (
+        <>
+          <div className="ml-4 border-l border-gray-800 pl-2 space-y-0.5">
+            {entries.map(([k, v]) => (
+              <div key={k} className="group flex items-start gap-1 min-w-0">
+                <span className="flex-shrink-0 text-indigo-300">"{k}":</span>
+                <span className="min-w-0">
+                  <JsonTreeNode value={v} path={`${path}.${k}`} depth={depth + 1} />
+                </span>
+                <InlineCopyButton path={`${path}.${k}`} />
+              </div>
+            ))}
+          </div>
+          <span className="text-gray-500">{'}'}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+function JsonTree({ body, stepName }: { body: string; stepName: string }) {
+  const parsed = useMemo(() => {
+    try { return JSON.parse(body) as JsonValue; } catch { return null; }
+  }, [body]);
+
+  if (!parsed || typeof parsed !== 'object') {
+    return (
+      <pre className="max-h-72 overflow-auto rounded-lg bg-gray-950 p-3 text-xs text-gray-200">
+        {linkifyText(prettyBody(body))}
+      </pre>
+    );
+  }
+
+  return (
+    <div className="max-h-72 overflow-auto rounded-lg bg-gray-950 p-3 text-xs font-mono leading-5">
+      <JsonTreeNode value={parsed} path={`steps.${stepName}.body`} depth={0} />
+    </div>
+  );
+}
+
 interface RunResultsProps {
   run: ChainRunDetail;
 }
@@ -261,9 +376,7 @@ export default function RunResults({ run }: RunResultsProps) {
           {selectedStep.response_body && (
             <div>
               <SectionHeader label="Response body" copyText={prettyBody(selectedStep.response_body)} />
-              <pre className="max-h-72 overflow-auto rounded-lg bg-gray-950 p-3 text-xs text-gray-200">
-                {linkifyText(prettyBody(selectedStep.response_body))}
-              </pre>
+              <JsonTree body={selectedStep.response_body} stepName={selectedStep.step_name} />
             </div>
           )}
         </div>
