@@ -4,7 +4,7 @@ import Link from "next/link";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "⚡ CurlFlow",
+  title: "⚡ ColdFlu",
   description: "A lightweight curl step machine for chaining HTTP requests.",
 };
 
@@ -22,8 +22,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <div className="min-h-screen lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
           <aside className="border-b border-gray-800 bg-gray-950/90 px-6 py-8 lg:border-b-0 lg:border-r">
             <Link href="/chains" className="text-2xl font-semibold tracking-tight text-gray-100">
-              ⚡ CurlFlow
+              ⚡ ColdFlu 
             </Link>
+            <p><sub><code>*curl-flow* by <Link href="https://datmt.com/?ref=cold-flu" target="_blank">datmt.com</Link></code></sub></p>
             <p className="mt-3 text-sm text-gray-400">
               Chain curl requests, reuse step output, and inspect every run in one dark workspace.
             </p>

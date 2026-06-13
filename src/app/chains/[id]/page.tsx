@@ -326,7 +326,7 @@ export default function ChainPage({ params }: ChainPageProps) {
           <Link href="/" className="text-sm text-indigo-400 transition hover:text-indigo-300">
             ← Back to chains
           </Link>
-          <h1 className="mt-2 text-2xl font-semibold text-white">CurlFlow</h1>
+          <h1 className="mt-2 text-2xl font-semibold text-white">ColdFlu</h1>
           <p className="text-sm text-gray-400">Build DAGs, fan out parallel requests, and join results downstream.</p>
         </div>
         <div className="flex items-center gap-2">

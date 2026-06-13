@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: '⚡ CurlFlow — Docs',
+  title: '⚡ ColdFlu — Docs',
 };
 
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
@@ -88,7 +88,7 @@ export default function DocsPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-10 p-6">
       <div>
-        <h1 className="text-3xl font-bold text-white">⚡ CurlFlow Docs</h1>
+        <h1 className="text-3xl font-bold text-white">⚡ ColdFlu Docs</h1>
         <p className="mt-2 text-gray-400">
           Reference for variable syntax, transform steps, DAG execution, and more.
         </p>
@@ -114,7 +114,7 @@ export default function DocsPage() {
       {/* ── Overview ───────────────────────────────────────────── */}
       <Section id="overview" title="1. Overview">
         <p className="text-gray-300">
-          CurlFlow chains HTTP requests into a <strong className="text-white">DAG</strong> (directed acyclic graph).
+          ColdFlu chains HTTP requests into a <strong className="text-white">DAG</strong> (directed acyclic graph).
           Each step can be a <strong className="text-white">Curl step</strong> (makes an HTTP request) or a{' '}
           <strong className="text-white">Transform step</strong> (runs JavaScript and produces a value).
           Steps reference each other using the <Code>{'{{…}}'}</Code> interpolation syntax.
