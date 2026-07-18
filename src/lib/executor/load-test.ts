@@ -102,27 +102,33 @@ async function runLoadTest(loadTest: LoadTest): Promise<void> {
 
         executeChain(chainId, runId)
           .then(() => {
-            const row = historyDb.prepare('SELECT status FROM runs WHERE id = ?').get(runId) as
-              | { status: string }
-              | undefined;
-            const outcome = row?.status === 'failed' ? 'failed' : 'completed';
-            // Only count progress if not already cancelled in the DB.
-            const lt = historyDb.prepare('SELECT status FROM load_tests WHERE id = ?').get(loadTestId) as
-              | { status: string }
-              | undefined;
-            if (lt?.status === 'running') {
-              incrementLoadTestProgress(loadTestId, outcome);
-            }
+            // Single transaction: read run status, read load-test status, and bump
+            // the progress counter in one commit instead of three separate round trips.
+            const outcome = historyDb.transaction(() => {
+              const row = historyDb.prepare('SELECT status FROM runs WHERE id = ?').get(runId) as
+                | { status: string }
+                | undefined;
+              const result = row?.status === 'failed' ? 'failed' : 'completed';
+              const lt = historyDb.prepare('SELECT status FROM load_tests WHERE id = ?').get(loadTestId) as
+                | { status: string }
+                | undefined;
+              if (lt?.status === 'running') {
+                incrementLoadTestProgress(loadTestId, result);
+              }
+              return result;
+            })();
             if (outcome === 'completed') completed++; else failed++;
             dbg(`loadTest=${loadTestId} run=${runId} outcome=${outcome} duration=${Date.now() - launchTime}ms progress=${completed + failed}/${total} (ok=${completed} fail=${failed}) concurrency_free=${concurrency - (running - 1)}`);
           })
           .catch((err: unknown) => {
-            const lt = historyDb.prepare('SELECT status FROM load_tests WHERE id = ?').get(loadTestId) as
-              | { status: string }
-              | undefined;
-            if (lt?.status === 'running') {
-              incrementLoadTestProgress(loadTestId, 'failed');
-            }
+            historyDb.transaction(() => {
+              const lt = historyDb.prepare('SELECT status FROM load_tests WHERE id = ?').get(loadTestId) as
+                | { status: string }
+                | undefined;
+              if (lt?.status === 'running') {
+                incrementLoadTestProgress(loadTestId, 'failed');
+              }
+            })();
             failed++;
             dbg(`loadTest=${loadTestId} run=${runId} ERROR duration=${Date.now() - launchTime}ms err=${String(err)}`);
           })

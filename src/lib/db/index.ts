@@ -154,6 +154,10 @@ function initializeDatabases() {
   // History database
   const historyInstance = new Database(HISTORY_DB_PATH);
   historyInstance.pragma('journal_mode = WAL');
+  // NORMAL only fsyncs at WAL checkpoints instead of every commit. Safe with WAL
+  // (durable across app crashes; a very small window of loss only on OS/power crash).
+  // This is the dominant fix for load-test write throughput.
+  historyInstance.pragma('synchronous = NORMAL');
   // Wait up to 5 s when writers contend instead of failing immediately with SQLITE_BUSY
   historyInstance.pragma('busy_timeout = 5000');
   historyInstance.pragma('foreign_keys = OFF');

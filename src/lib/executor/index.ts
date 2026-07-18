@@ -399,25 +399,31 @@ async function executeStepsWithDependencies(
   }
 
   const remaining = steps.filter((step) => !completed.has(step.id) && !failed.has(step.id) && !skipped.has(step.id));
-  if (remaining.length > 0) {
-    for (const step of remaining) {
-      failed.add(step.id);
-      recordFailedStep(
-        runId,
-        step,
-        waveIndex,
-        'Cyclic or unresolved dependencies prevented execution.',
-      );
-    }
-  }
 
-  const finalStatus = failed.size > 0 ? 'failed' : 'completed';
-  historyDb.prepare('UPDATE runs SET status = ?, finished_at = ?, error = ? WHERE id = ?').run(
-    finalStatus,
-    Date.now(),
-    failed.size > 0 ? 'One or more steps failed.' : null,
-    runId,
-  );
+  // Nothing here awaits, so batch the remaining-step inserts and the final run
+  // update into a single commit instead of N+1 separate autocommit writes.
+  const finalStatus = historyDb.transaction(() => {
+    if (remaining.length > 0) {
+      for (const step of remaining) {
+        failed.add(step.id);
+        recordFailedStep(
+          runId,
+          step,
+          waveIndex,
+          'Cyclic or unresolved dependencies prevented execution.',
+        );
+      }
+    }
+
+    const status = failed.size > 0 ? 'failed' : 'completed';
+    historyDb.prepare('UPDATE runs SET status = ?, finished_at = ?, error = ? WHERE id = ?').run(
+      status,
+      Date.now(),
+      failed.size > 0 ? 'One or more steps failed.' : null,
+      runId,
+    );
+    return status;
+  })();
 
   dbg(`run=${runId} DONE status=${finalStatus} completed=${completed.size} failed=${failed.size} skipped=${skipped.size} total_duration=${Date.now() - execStart}ms`);
   return runId;
