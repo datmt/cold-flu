@@ -31,6 +31,12 @@ export async function apiFetch<T>(input: RequestInfo | URL, init?: RequestInit):
     throw new Error(message);
   }
 
+  const method = (init?.method ?? "GET").toUpperCase();
+  const url = typeof input === "string" ? input : input.toString();
+  if (method !== "GET" && /^\/api\/(chains|folders)(\/|$)/.test(url)) {
+    window.dispatchEvent(new CustomEvent("coldflu:tree-refresh"));
+  }
+
   return payload as T;
 }
 

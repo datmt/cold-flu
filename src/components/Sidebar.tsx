@@ -58,6 +58,12 @@ export default function Sidebar() {
     void run();
   }, [loadTree]);
 
+  useEffect(() => {
+    const onTreeRefresh = () => void loadTree();
+    window.addEventListener('coldflu:tree-refresh', onTreeRefresh);
+    return () => window.removeEventListener('coldflu:tree-refresh', onTreeRefresh);
+  }, [loadTree]);
+
   // Close any open row menu on outside click.
   useEffect(() => {
     if (!openMenuId) return;
@@ -326,7 +332,7 @@ export default function Sidebar() {
             </button>
           </div>
         ) : (
-          <div className="flex gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
             <button
               type="button"
               disabled={busy}
