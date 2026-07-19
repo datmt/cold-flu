@@ -5,13 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { apiFetch, formatDateTime } from "@/lib/client";
-import type { ChainDetail, ChainSummary } from "@/lib/types";
+import type { ChainDetail, ChainSummary, Folder } from "@/lib/types";
 
 const PAGE_SIZE = 10;
 
 export default function ChainsPage() {
   const router = useRouter();
   const [chains, setChains] = useState<ChainSummary[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -24,10 +25,15 @@ export default function ChainsPage() {
     const loadChains = async () => {
       try {
         setLoading(true);
-        const data = await apiFetch<ChainSummary[]>("/api/chains");
-        // Sort by updated_at descending
-        data.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
-        setChains(data);
+        const [data, folderData] = await Promise.all([
+          apiFetch<ChainSummary[]>("/api/chains"),
+          apiFetch<Folder[]>("/api/folders"),
+        ]);
+        // Sort by updated_at descending; exclude single-request "simple" entries
+        const chainsOnly = data.filter((chain) => chain.mode === "chain");
+        chainsOnly.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+        setChains(chainsOnly);
+        setFolders(folderData);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Unable to load chains");
       } finally {
@@ -121,6 +127,8 @@ export default function ChainsPage() {
     }
   };
 
+  const folderNameById = new Map(folders.map((f) => [f.id, f.name]));
+
   const filtered = chains.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase())
   );
@@ -197,6 +205,7 @@ export default function ChainsPage() {
               <thead>
                 <tr className="border-b border-gray-800 bg-gray-900/80 text-left text-xs uppercase tracking-wider text-gray-500">
                   <th className="px-4 py-3 font-medium">Title</th>
+                  <th className="px-4 py-3 font-medium">Folder</th>
                   <th className="px-4 py-3 font-medium">Steps</th>
                   <th className="px-4 py-3 font-medium">Updated</th>
                   <th className="px-4 py-3 font-medium">Actions</th>
@@ -205,7 +214,7 @@ export default function ChainsPage() {
               <tbody className="divide-y divide-gray-800 bg-gray-900">
                 {paginated.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
                       No chains match your search.
                     </td>
                   </tr>
@@ -219,6 +228,9 @@ export default function ChainsPage() {
                           {chain.description ? (
                             <p className="mt-0.5 text-xs font-normal text-gray-500">{chain.description}</p>
                           ) : null}
+                        </td>
+                        <td className="px-4 py-3 text-gray-400">
+                          {chain.folder_id ? folderNameById.get(chain.folder_id) ?? "—" : "—"}
                         </td>
                         <td className="px-4 py-3 text-gray-400">
                           {chain.step_count} step{chain.step_count === 1 ? "" : "s"}
