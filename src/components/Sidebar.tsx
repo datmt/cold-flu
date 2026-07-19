@@ -30,6 +30,12 @@ export default function Sidebar() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null | 'root'>(null);
   const [busy, setBusy] = useState(false);
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const [requestModalName, setRequestModalName] = useState('New Request');
+  const [requestModalCurl, setRequestModalCurl] = useState('');
+  const [requestModalError, setRequestModalError] = useState<string | null>(null);
 
   const activeChainId = pathname?.startsWith('/chains/') ? pathname.split('/')[2] : null;
 
@@ -91,10 +97,21 @@ export default function Sidebar() {
 
   const isExpanded = (id: string) => (autoExpandIds ? autoExpandIds.has(id) : expanded.has(id));
 
+  const openRequestModal = () => {
+    setRequestModalName('New Request');
+    setRequestModalCurl('');
+    setRequestModalError(null);
+    setRequestModalOpen(true);
+  };
+
   const createRequest = async () => {
-    const name = window.prompt('Request name', 'New Request');
-    if (!name) return;
+    const name = requestModalName.trim();
+    if (!name) {
+      setRequestModalError('Name is required.');
+      return;
+    }
     setBusy(true);
+    setRequestModalError(null);
     try {
       const chain = await apiFetch<ChainDetail>('/api/chains', {
         method: 'POST',
@@ -102,12 +119,17 @@ export default function Sidebar() {
       });
       await apiFetch('/api/chains/' + chain.id + '/steps', {
         method: 'POST',
-        body: JSON.stringify({ name: 'Request', type: 'curl', curl_template: "curl -X GET ''" }),
+        body: JSON.stringify({
+          name: 'Request',
+          type: 'curl',
+          curl_template: requestModalCurl.trim() || "curl -X GET ''",
+        }),
       });
       await loadTree();
+      setRequestModalOpen(false);
       router.push(`/chains/${chain.id}`);
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : 'Failed to create request');
+      setRequestModalError(createError instanceof Error ? createError.message : 'Failed to create request');
     } finally {
       setBusy(false);
     }
@@ -180,6 +202,52 @@ export default function Sidebar() {
     await loadTree();
   };
 
+  const toggleBatchMode = () => {
+    setBatchMode((current) => !current);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelected = (key: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const deleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    const hasFolder = Array.from(selectedIds).some((key) => key.startsWith('folder:'));
+    const message = hasFolder
+      ? `Delete ${selectedIds.size} selected item(s)? Requests inside selected folders will move to root.`
+      : `Delete ${selectedIds.size} selected item(s)?`;
+    if (!window.confirm(message)) return;
+
+    setBusy(true);
+    try {
+      const deletedChainIds = new Set<string>();
+      await Promise.all(
+        Array.from(selectedIds).map(async (key) => {
+          const [kind, id] = key.split(':');
+          if (kind === 'chain') {
+            await apiFetch(`/api/chains/${id}`, { method: 'DELETE' });
+            deletedChainIds.add(id);
+          } else {
+            await apiFetch(`/api/folders/${id}`, { method: 'DELETE' });
+          }
+        }),
+      );
+      setSelectedIds(new Set());
+      if (activeChainId && deletedChainIds.has(activeChainId)) router.push('/chains');
+      await loadTree();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Failed to delete selected items');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const duplicateChainRow = async (id: string) => {
     setBusy(true);
     try {
@@ -238,32 +306,62 @@ export default function Sidebar() {
           onChange={(e) => setSearch(e.target.value)}
           className="w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-1.5 text-xs text-gray-100 outline-none focus:border-indigo-500"
         />
-        <div className="flex gap-1.5">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void createFolder()}
-            className="flex-1 rounded-lg border border-gray-700 px-2 py-1.5 text-xs text-gray-200 transition hover:border-indigo-500 disabled:opacity-50"
-          >
-            + Folder
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void createRequest()}
-            className="flex-1 rounded-lg border border-gray-700 px-2 py-1.5 text-xs text-gray-200 transition hover:border-indigo-500 disabled:opacity-50"
-          >
-            + Request
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void createChain()}
-            className="flex-1 rounded-lg border border-gray-700 px-2 py-1.5 text-xs text-gray-200 transition hover:border-indigo-500 disabled:opacity-50"
-          >
-            + Chain
-          </button>
-        </div>
+        {batchMode ? (
+          <div className="flex items-center gap-1.5">
+            <span className="flex-1 text-xs text-gray-400">{selectedIds.size} selected</span>
+            <button
+              type="button"
+              disabled={busy || selectedIds.size === 0}
+              onClick={() => void deleteSelected()}
+              className="rounded-lg border border-red-900 px-2 py-1.5 text-xs text-red-300 transition hover:border-red-500 disabled:opacity-50"
+            >
+              Delete
+            </button>
+            <button
+              type="button"
+              onClick={toggleBatchMode}
+              className="rounded-lg border border-gray-700 px-2 py-1.5 text-xs text-gray-200 transition hover:border-indigo-500"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void createFolder()}
+              className="flex-1 rounded-lg border border-gray-700 px-2 py-1.5 text-xs text-gray-200 transition hover:border-indigo-500 disabled:opacity-50"
+            >
+              + Folder
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={openRequestModal}
+              className="flex-1 rounded-lg border border-gray-700 px-2 py-1.5 text-xs text-gray-200 transition hover:border-indigo-500 disabled:opacity-50"
+            >
+              + Request
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void createChain()}
+              className="flex-1 rounded-lg border border-gray-700 px-2 py-1.5 text-xs text-gray-200 transition hover:border-indigo-500 disabled:opacity-50"
+            >
+              + Chain
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={toggleBatchMode}
+              title="Batch select"
+              className="rounded-lg border border-gray-700 px-2 py-1.5 text-xs text-gray-200 transition hover:border-indigo-500 disabled:opacity-50"
+            >
+              ☑
+            </button>
+          </div>
+        )}
       </div>
 
       <div
@@ -308,10 +406,65 @@ export default function Sidebar() {
                 onDeleteChain={deleteChainRow}
                 onDeleteFolder={deleteFolderRow}
                 onDuplicateChain={duplicateChainRow}
+                batchMode={batchMode}
+                selectedIds={selectedIds}
+                onToggleSelected={toggleSelected}
               />
             ))
         )}
       </div>
+
+      {requestModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-xl rounded-2xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
+            <h2 className="mb-4 text-lg font-semibold text-white">New request</h2>
+
+            <label className="mb-3 block space-y-1">
+              <span className="text-sm font-medium text-gray-300">Name</span>
+              <input
+                type="text"
+                value={requestModalName}
+                onChange={(e) => setRequestModalName(e.target.value)}
+                placeholder="e.g. Get Token"
+                className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white outline-none transition focus:border-indigo-500"
+              />
+            </label>
+
+            <label className="mb-4 block space-y-1">
+              <span className="text-sm font-medium text-gray-300">Import from cURL (optional)</span>
+              <textarea
+                rows={8}
+                value={requestModalCurl}
+                onChange={(e) => setRequestModalCurl(e.target.value)}
+                placeholder={'curl -X POST https://api.example.com/token \\\n  -H "Content-Type: application/json" \\\n  -d \'{"user":"alice"}\''}
+                className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 font-mono text-sm text-white outline-none transition focus:border-indigo-500"
+              />
+            </label>
+
+            {requestModalError && (
+              <p className="mb-3 text-sm text-red-400">{requestModalError}</p>
+            )}
+
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setRequestModalOpen(false)}
+                className="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-300 transition hover:bg-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void createRequest()}
+                disabled={busy}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-50"
+              >
+                {busy ? 'Creating…' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -335,6 +488,9 @@ interface TreeRowProps {
   onDeleteChain: (id: string, name: string) => Promise<void>;
   onDeleteFolder: (node: TreeNode) => Promise<void>;
   onDuplicateChain: (id: string) => Promise<void>;
+  batchMode: boolean;
+  selectedIds: Set<string>;
+  onToggleSelected: (key: string) => void;
 }
 
 function TreeRow({
@@ -356,6 +512,9 @@ function TreeRow({
   onDeleteChain,
   onDeleteFolder,
   onDuplicateChain,
+  batchMode,
+  selectedIds,
+  onToggleSelected,
 }: TreeRowProps) {
   const indent = { paddingLeft: `${depth * 14 + 8}px` };
   const menuOpen = openMenuId === node.id;
@@ -364,11 +523,12 @@ function TreeRow({
   if (node.type === 'folder') {
     const expanded = isExpanded(node.id);
     const isDropTarget = dropTargetId === node.id;
+    const selectionKey = `folder:${node.id}`;
 
     return (
       <div>
         <div
-          draggable
+          draggable={!batchMode}
           onDragStart={startDrag({ kind: 'folder', id: node.id })}
           onDragOver={(e) => {
             e.preventDefault();
@@ -384,6 +544,14 @@ function TreeRow({
           style={indent}
           className={`group flex items-center gap-1.5 rounded-lg py-1.5 pr-1.5 transition ${isDropTarget ? 'bg-indigo-950/50' : 'hover:bg-gray-900'}`}
         >
+          {batchMode && (
+            <input
+              type="checkbox"
+              checked={selectedIds.has(selectionKey)}
+              onChange={() => onToggleSelected(selectionKey)}
+              className="shrink-0"
+            />
+          )}
           <button type="button" onClick={() => onToggle(node.id)} className="text-xs text-gray-500 hover:text-gray-300">
             {expanded ? '▾' : '▸'}
           </button>
@@ -425,6 +593,9 @@ function TreeRow({
                   onDeleteChain={onDeleteChain}
                   onDeleteFolder={onDeleteFolder}
                   onDuplicateChain={onDuplicateChain}
+                  batchMode={batchMode}
+                  selectedIds={selectedIds}
+                  onToggleSelected={onToggleSelected}
                 />
               ))}
           </div>
@@ -434,14 +605,23 @@ function TreeRow({
   }
 
   const active = activeChainId === node.id;
+  const chainSelectionKey = `chain:${node.id}`;
 
   return (
     <div
-      draggable
+      draggable={!batchMode}
       onDragStart={startDrag({ kind: 'chain', id: node.id })}
       style={indent}
       className={`group flex items-center gap-1.5 rounded-lg py-1.5 pr-1.5 transition ${active ? 'bg-indigo-600/20' : 'hover:bg-gray-900'} ${dimmed ? 'opacity-40' : ''}`}
     >
+      {batchMode && (
+        <input
+          type="checkbox"
+          checked={selectedIds.has(chainSelectionKey)}
+          onChange={() => onToggleSelected(chainSelectionKey)}
+          className="shrink-0"
+        />
+      )}
       <Link href={`/chains/${node.id}`} className="flex min-w-0 flex-1 items-center gap-1.5">
         {node.mode === 'chain' ? (
           <span className="shrink-0 text-xs" title="Chain">🔗</span>
