@@ -7,6 +7,7 @@ import { use, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import RunResults from '@/components/RunResults';
+import SimpleRequestView from '@/components/SimpleRequestView';
 import { apiFetch } from '@/lib/client';
 import { extractMethodFromCurl, getNodeType } from '@/lib/steps';
 import type { ChainDetail, ChainRun, ChainRunDetail, Environment, LoadTest } from '@/lib/types';
@@ -317,6 +318,14 @@ export default function ChainPage({ params }: ChainPageProps) {
 
   if (!chain) {
     return <div className="p-6 text-sm text-red-400">{error ?? 'Chain not found'}</div>;
+  }
+
+  if (chain.mode === 'simple') {
+    return (
+      <div className="p-6">
+        <SimpleRequestView key={chain.id} chain={chain} environments={environments} onChainUpdate={setChain} />
+      </div>
+    );
   }
 
   return (

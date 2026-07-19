@@ -66,6 +66,8 @@ export default function ChainsPage() {
             name: created.name,
             description: created.description,
             environment_id: created.environment_id,
+            mode: created.mode,
+            folder_id: created.folder_id,
             created_at: created.created_at,
             updated_at: created.updated_at,
             step_count: created.steps.length,

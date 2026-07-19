@@ -1,3 +1,15 @@
+const METHOD_COLORS: Record<string, string> = {
+  GET: 'bg-green-900 text-green-300',
+  POST: 'bg-blue-900 text-blue-300',
+  PUT: 'bg-yellow-900 text-yellow-300',
+  DELETE: 'bg-red-900 text-red-300',
+  PATCH: 'bg-purple-900 text-purple-300',
+};
+
+export function methodColor(method: string): string {
+  return METHOD_COLORS[method.toUpperCase()] ?? 'bg-gray-800 text-gray-300';
+}
+
 export function isJsonLike(value: string): boolean {
   const trimmed = value.trim();
   return trimmed.startsWith('{') || trimmed.startsWith('[');

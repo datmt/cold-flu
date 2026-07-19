@@ -3,6 +3,27 @@ export type Dictionary = Record<string, string>;
 export type RunStatus = 'pending' | 'running' | 'completed' | 'failed';
 export type RunStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped' | 'stale';
 export type StepType = 'curl' | 'transform' | 'condition';
+export type ChainMode = 'simple' | 'chain';
+
+export interface Folder {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  order_index: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface TreeNode {
+  type: 'folder' | 'chain';
+  id: string;
+  name: string;
+  children?: TreeNode[];
+  mode?: ChainMode;
+  method?: string;
+  step_count?: number;
+  updated_at: number;
+}
 
 export interface Environment {
   id: string;
@@ -19,6 +40,8 @@ export interface ChainSummary {
   name: string;
   description: string;
   environment_id: string | null;
+  mode: ChainMode;
+  folder_id: string | null;
   created_at: number;
   updated_at: number;
   step_count: number;
@@ -54,6 +77,8 @@ export interface Chain {
   name: string;
   description: string;
   environment_id: string | null;
+  mode: ChainMode;
+  folder_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -138,5 +163,6 @@ export interface ChainExport {
   version: 1;
   name: string;
   description: string;
+  mode: ChainMode;
   steps: ChainExportStep[];
 }

@@ -6,6 +6,8 @@ const createChainSchema = z.object({
   name: z.string().trim().min(1),
   description: z.string().default(''),
   environment_id: z.string().nullable().optional(),
+  mode: z.enum(['simple', 'chain']).default('chain'),
+  folder_id: z.string().nullable().optional(),
 });
 
 export async function GET() {

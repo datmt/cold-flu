@@ -2,6 +2,7 @@
 
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { useState } from 'react';
+import { methodColor } from '@/lib/formatters';
 import type { Step } from '@/lib/types';
 
 export function CurlNode({ data, selected }: NodeProps) {
@@ -78,16 +79,4 @@ export function CurlNode({ data, selected }: NodeProps) {
       <Handle type="source" position={Position.Right} className="!bg-indigo-500" />
     </div>
   );
-}
-
-function methodColor(method: string) {
-  const map: Record<string, string> = {
-    GET: 'bg-green-900 text-green-300',
-    POST: 'bg-blue-900 text-blue-300',
-    PUT: 'bg-yellow-900 text-yellow-300',
-    DELETE: 'bg-red-900 text-red-300',
-    PATCH: 'bg-purple-900 text-purple-300',
-  };
-
-  return map[method.toUpperCase()] ?? 'bg-gray-800 text-gray-300';
 }

@@ -5,22 +5,26 @@ import Database from 'better-sqlite3';
 import { v4 as uuid } from 'uuid';
 
 import { DEFAULT_TRANSFORM_CODE } from '@/lib/steps';
+import { extractMethodFromCurl } from '@/lib/steps';
 import type {
   Chain,
   ChainDetail,
   ChainExport,
   ChainExportStep,
+  ChainMode,
   ChainRun,
   ChainSummary,
   ChainRunDetail,
   Dictionary,
   Environment,
+  Folder,
   LoadTest,
   LoadTestStatus,
   RunStep,
   Step,
   StepDependency,
   StepType,
+  TreeNode,
 } from '@/lib/types';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -35,6 +39,8 @@ const configAlterStatements = [
   "ALTER TABLE steps ADD COLUMN position_x REAL NOT NULL DEFAULT 0",
   "ALTER TABLE steps ADD COLUMN position_y REAL NOT NULL DEFAULT 0",
   "ALTER TABLE environments ADD COLUMN functions TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE chains ADD COLUMN mode TEXT NOT NULL DEFAULT 'chain'",
+  "ALTER TABLE chains ADD COLUMN folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL",
 ];
 
 function ensureDataDir() {
@@ -55,6 +61,8 @@ type ChainRow = Chain;
 type ChainWithCountRow = Chain & {
   step_count: number;
 };
+
+type FolderRow = Folder;
 
 type StepRow = {
   id: string;
@@ -129,6 +137,9 @@ function initializeDatabases() {
   // Config database
   const configInstance = new Database(CONFIG_DB_PATH);
   configInstance.pragma('journal_mode = WAL');
+  // Wait for concurrent schema writers (e.g. parallel Next.js build workers all
+  // initializing against a brand-new db file) instead of failing immediately with SQLITE_BUSY.
+  configInstance.pragma('busy_timeout = 5000');
   configInstance.pragma('foreign_keys = ON');
 
   const configSchema = fs.readFileSync(CONFIG_SCHEMA_PATH, 'utf8');
@@ -196,6 +207,10 @@ function normalizeStepType(value?: string | null): StepType {
   if (value === 'transform') return 'transform';
   if (value === 'condition') return 'condition';
   return 'curl';
+}
+
+function normalizeChainMode(value?: string | null): ChainMode {
+  return value === 'simple' ? 'simple' : 'chain';
 }
 
 function normalizeCacheEnabled(value?: number | boolean | null): number {
@@ -517,20 +532,37 @@ export function createChain(input: {
   name: string;
   description?: string;
   environment_id?: string | null;
+  mode?: ChainMode;
+  folder_id?: string | null;
 }): ChainDetail {
   const id = uuid();
   const now = Date.now();
 
   db.prepare(
-    'INSERT INTO chains (id, name, description, environment_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(id, input.name, input.description ?? '', input.environment_id ?? null, now, now);
+    'INSERT INTO chains (id, name, description, environment_id, mode, folder_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+  ).run(
+    id,
+    input.name,
+    input.description ?? '',
+    input.environment_id ?? null,
+    normalizeChainMode(input.mode),
+    input.folder_id ?? null,
+    now,
+    now,
+  );
 
   return getChain(id)!;
 }
 
 export function updateChain(
   id: string,
-  input: { name?: string; description?: string; environment_id?: string | null },
+  input: {
+    name?: string;
+    description?: string;
+    environment_id?: string | null;
+    mode?: ChainMode;
+    folder_id?: string | null;
+  },
 ): ChainDetail | null {
   const existing = db.prepare('SELECT * FROM chains WHERE id = ?').get(id) as ChainRow | undefined;
 
@@ -540,11 +572,13 @@ export function updateChain(
 
   const now = Date.now();
   db.prepare(
-    'UPDATE chains SET name = ?, description = ?, environment_id = ?, updated_at = ? WHERE id = ?',
+    'UPDATE chains SET name = ?, description = ?, environment_id = ?, mode = ?, folder_id = ?, updated_at = ? WHERE id = ?',
   ).run(
     input.name ?? existing.name,
     input.description ?? existing.description,
     input.environment_id === undefined ? existing.environment_id : input.environment_id,
+    input.mode ? normalizeChainMode(input.mode) : existing.mode,
+    input.folder_id === undefined ? existing.folder_id : input.folder_id,
     now,
     id,
   );
@@ -555,6 +589,138 @@ export function updateChain(
 export function deleteChain(id: string): boolean {
   const result = db.prepare('DELETE FROM chains WHERE id = ?').run(id);
   return result.changes > 0;
+}
+
+// ------ Folders
+// ------------------------------
+
+function mapFolder(row: FolderRow): Folder {
+  return {
+    id: row.id,
+    name: row.name,
+    parent_id: row.parent_id,
+    order_index: row.order_index,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export function listFolders(): Folder[] {
+  const rows = db
+    .prepare('SELECT * FROM folders ORDER BY order_index, created_at')
+    .all() as FolderRow[];
+  return rows.map(mapFolder);
+}
+
+export function getFolder(id: string): Folder | null {
+  const row = db.prepare('SELECT * FROM folders WHERE id = ?').get(id) as FolderRow | undefined;
+  return row ? mapFolder(row) : null;
+}
+
+export function createFolder(input: { name: string; parent_id?: string | null }): Folder {
+  const id = uuid();
+  const now = Date.now();
+  const existingCount = db
+    .prepare('SELECT COUNT(*) AS count FROM folders WHERE parent_id IS ?')
+    .get(input.parent_id ?? null) as { count: number };
+
+  db.prepare(
+    'INSERT INTO folders (id, name, parent_id, order_index, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+  ).run(id, input.name, input.parent_id ?? null, existingCount.count, now, now);
+
+  return getFolder(id)!;
+}
+
+export function updateFolder(
+  id: string,
+  input: { name?: string; parent_id?: string | null; order_index?: number },
+): Folder | null {
+  const existing = getFolder(id);
+
+  if (!existing) {
+    return null;
+  }
+
+  const now = Date.now();
+  db.prepare(
+    'UPDATE folders SET name = ?, parent_id = ?, order_index = ?, updated_at = ? WHERE id = ?',
+  ).run(
+    input.name ?? existing.name,
+    input.parent_id === undefined ? existing.parent_id : input.parent_id,
+    input.order_index ?? existing.order_index,
+    now,
+    id,
+  );
+
+  return getFolder(id);
+}
+
+export function deleteFolder(id: string): boolean {
+  const existing = getFolder(id);
+
+  if (!existing) {
+    return false;
+  }
+
+  db.transaction(() => {
+    // Chains directly inside this folder move to root before the folder (and any
+    // nested child folders, via ON DELETE CASCADE) is removed.
+    db.prepare('UPDATE chains SET folder_id = NULL, updated_at = ? WHERE folder_id = ?').run(Date.now(), id);
+    db.prepare('DELETE FROM folders WHERE id = ?').run(id);
+  })();
+
+  return true;
+}
+
+export function getTree(): TreeNode[] {
+  const folders = listFolders();
+  const chains = listChains();
+
+  const folderNodes = new Map<string, TreeNode>();
+  for (const folder of folders) {
+    folderNodes.set(folder.id, {
+      type: 'folder',
+      id: folder.id,
+      name: folder.name,
+      children: [],
+      updated_at: folder.updated_at,
+    });
+  }
+
+  const chainNodes: TreeNode[] = chains.map((chain) => {
+    const firstStep = chain.mode === 'simple' ? getChainStepRows(chain.id)[0] : undefined;
+    return {
+      type: 'chain',
+      id: chain.id,
+      name: chain.name,
+      mode: chain.mode,
+      method: firstStep ? extractMethodFromCurl(firstStep.curl_template) : undefined,
+      step_count: chain.step_count,
+      updated_at: chain.updated_at,
+    };
+  });
+
+  const roots: TreeNode[] = [];
+
+  for (const folder of folders) {
+    const node = folderNodes.get(folder.id)!;
+    if (folder.parent_id && folderNodes.has(folder.parent_id)) {
+      folderNodes.get(folder.parent_id)!.children!.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  for (const chain of chains) {
+    const node = chainNodes.find((n) => n.id === chain.id)!;
+    if (chain.folder_id && folderNodes.has(chain.folder_id)) {
+      folderNodes.get(chain.folder_id)!.children!.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  return roots;
 }
 
 export function getStep(id: string): Step | null {
@@ -890,6 +1056,7 @@ export function exportChain(id: string): ChainExport | null {
     version: 1,
     name: detail.name,
     description: detail.description,
+    mode: detail.mode,
     steps: detail.steps.map(
       (step): ChainExportStep => ({
         ref: step.id,
@@ -908,7 +1075,11 @@ export function exportChain(id: string): ChainExport | null {
 }
 
 export function importChain(payload: ChainExport): ChainDetail {
-  const newChain = createChain({ name: payload.name, description: payload.description });
+  const newChain = createChain({
+    name: payload.name,
+    description: payload.description,
+    mode: payload.mode,
+  });
 
   // Map old ref -> new step id so we can wire up dependencies.
   const refToId = new Map<string, string>();

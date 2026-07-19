@@ -19,6 +19,7 @@ const importSchema = z.object({
   version: z.literal(1),
   name: z.string().trim().min(1),
   description: z.string().default(''),
+  mode: z.enum(['simple', 'chain']).default('chain'),
   steps: z.array(stepSchema).default([]),
 });
 
