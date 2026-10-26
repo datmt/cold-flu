@@ -1,0 +1,1 @@
+{"nodes": [{"id": "foundry_hooks_outerloop_outerloop_hook", "label": "outerloop hook (disabled, emits on session.end)", "file_type": "code", "source_file": ".foundry/hooks/outerloop.yaml", "source_location": null, "source_url": null, "captured_at": null, "author": null, "contributor": null}], "edges": [], "hyperedges": []}

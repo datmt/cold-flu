@@ -46,8 +46,8 @@ function buildCurlFromParts(parts: CurlParts): string {
     if (h.key) lines.push(`  -H ${JSON.stringify(`${h.key}: ${h.value}`)}`);
   }
   if (parts.body) {
-    // JSON.stringify handles single quotes, double quotes, backslashes, newlines, unicode, etc.
-    lines.push(`  -d ${JSON.stringify(parts.body)}`);
+    // Single-quoted like a shell would: newlines stay literal, ' becomes '\''
+    lines.push(`  -d '${parts.body.replace(/'/g, "'\\''")}'`);
   }
   return lines.join(' \\\n');
 }

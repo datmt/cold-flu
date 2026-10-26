@@ -21,12 +21,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className="bg-gray-950 text-gray-100">
         <div className="flex min-h-screen flex-col">
           <header className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-gray-800 bg-gray-950/90 px-4 py-3 sm:px-6 lg:px-10">
-            <Link href="/chains" className="flex items-baseline gap-2 text-xl font-semibold tracking-tight text-gray-100">
-              ⚡ ColdFlu
+            <div className="flex items-baseline gap-2">
+              <Link href="/chains" className="text-xl font-semibold tracking-tight text-gray-100">⚡ ColdFlu</Link>
               <span className="text-xs font-normal text-gray-500">
-                <code>*curl-flow* by <Link href="https://datmt.com/?ref=cold-flu" target="_blank">datmt.com</Link></code>
+                <code>*curl-flow* by <a href="https://datmt.com/?ref=cold-flu" target="_blank" rel="noreferrer">datmt.com</a></code>
               </span>
-            </Link>
+            </div>
             <nav className="flex flex-wrap gap-2">
               {navigation.map((item) => (
                 <Link

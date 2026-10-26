@@ -6,10 +6,10 @@ export interface ParsedRequest {
 }
 
 function normalizeCurl(curlStr: string): string {
+  // Newlines stay: quoted bodies keep them, bare ones are whitespace to the tokenizer,
+  // and backslash continuations are skipped there.
   return curlStr
-    .replace(/\\\r?\n/g, " ")   // Linux/macOS backslash continuation
     .replace(/\^\r?\n/g, " ")   // Windows CMD caret continuation
-    .replace(/\r?\n/g, " ")
     .trim();
 }
 
@@ -36,6 +36,8 @@ export function tokenizeCurl(command: string): string[] {
       if (ch === '"') { state = "double"; tokenStarted = true; continue; }
       if (ch === "\\") {
         const next = command[i + 1];
+        if (next === "\r" && command[i + 2] === "\n") { i += 2; continue; } // line continuation
+        if (next === "\n") { i++; continue; }
         if (next) { current += next; tokenStarted = true; i++; }
         continue;
       }
