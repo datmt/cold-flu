@@ -1,17 +1,23 @@
-## Project Overview
+# AGENTS.md — Opencode Minimal Loop
 
-This project provide API testing, load testing platform 
+These rules are loaded by opencode before loop work.
 
-## Principles
-1. Don't assume. If context is missing or ambiguous, ask for clarification first.
-2. Minimum code. Implement the simplest solution that completely solves the issue. No speculative engineering.
-3. Surgical edits. Touch only the files explicitly required. Clean up only your own code.
-4. Close the loop. Define clear success criteria and verify changes before declaring a task finished.
-5. Follow existing patterns in the surrounding code
-6. Write tests for new functionality
-7. Keep changes focused — avoid over-engineering
+## Loop Mode
 
-## Comments
+- Start in L1 report-only mode.
+- Read `STATE.md` before any triage.
+- Update `STATE.md` after every loop run.
+- Do not edit source code until the human explicitly enables L2.
 
-- Only add a comment when it explains **why** something is done or reveals non-obvious logic that a reader must know to safely change the code. If the code is self-explanatory, no comment is needed.
-- Never include links (Slack, GitHub, Jira, etc.) in code comments.
+## Safety
+
+- Never push or merge without human approval.
+- Never edit `.env`, `.env.*`, `auth/`, `payments/`, `secrets/`, or `credentials/`.
+- Use a git worktree for every code-changing attempt.
+- Max 3 fix attempts per item; escalate after that.
+
+## Verification
+
+- For L2+ changes, dispatch a verifier sub-agent after implementation.
+- Run the project's documented tests before proposing a fix.
+- Record test evidence in `STATE.md`.
