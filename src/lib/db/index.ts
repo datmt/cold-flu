@@ -27,6 +27,8 @@ import type {
   TreeNode,
 } from '@/lib/types';
 
+import { compactHistory, pruneChainHistory, readRetention, writeRetention, type RetentionSettings } from './retention';
+
 const DATA_DIR = path.join(process.cwd(), 'data');
 const CONFIG_DB_PATH = path.join(DATA_DIR, 'app.db');
 const HISTORY_DB_PATH = path.join(DATA_DIR, 'history.db');
@@ -111,6 +113,7 @@ type RunStepRow = {
   response_headers: string | null;
   response_body: string | null;
   from_cache: number;
+  body_truncated: number;
   error: string | null;
   started_at: number | null;
   finished_at: number | null;
@@ -182,6 +185,10 @@ function initializeDatabases() {
   historyInstance.exec('CREATE INDEX IF NOT EXISTS idx_runs_load_test_id ON runs(load_test_id)');
   historyInstance.exec('CREATE INDEX IF NOT EXISTS idx_run_steps_run_id ON run_steps(run_id)');
   historyInstance.exec('CREATE INDEX IF NOT EXISTS idx_load_tests_chain_id ON load_tests(chain_id)');
+
+  try {
+    historyInstance.exec('ALTER TABLE run_steps ADD COLUMN body_truncated INTEGER NOT NULL DEFAULT 0');
+  } catch {} // column already exists
 
   // Migrate load_tests if it has a stale FK to chains (chains lives in configDb, not historyDb)
   const loadTestFks = historyInstance.pragma('foreign_key_list(load_tests)') as { table: string }[];
@@ -289,6 +296,7 @@ function mapRunStep(row: RunStepRow): RunStep {
     response_headers: row.response_headers,
     response_body: row.response_body,
     from_cache: Boolean(row.from_cache),
+    body_truncated: Boolean(row.body_truncated),
     error: row.error,
     started_at: row.started_at,
     finished_at: row.finished_at,
@@ -1161,6 +1169,7 @@ export function finalizeLoadTest(id: string): void {
     Date.now(),
     id,
   );
+  safePrune(row.chain_id);
 }
 
 export function listLoadTestRuns(loadTestId: string, limit = 100, offset = 0): ChainRun[] {
@@ -1196,4 +1205,36 @@ export function listLoadTestsForChain(chainId: string): LoadTest[] {
     .prepare('SELECT * FROM load_tests WHERE chain_id = ? ORDER BY started_at DESC')
     .all(chainId) as LoadTestRow[];
   return rows.map(mapLoadTest);
+}
+
+// ------ History retention
+// ------------------------------
+
+export function getRetention(): RetentionSettings {
+  return readRetention(db);
+}
+
+export function setRetention(settings: RetentionSettings): void {
+  writeRetention(db, settings);
+}
+
+function safePrune(chainId: string): void {
+  // Retention is housekeeping: never let it fail a run.
+  try {
+    pruneChainHistory(historyDb, chainId, readRetention(db));
+  } catch (error) {
+    console.error('[retention] prune failed', error);
+  }
+}
+
+/** Called when a run finishes. Load-test runs are skipped; their group is pruned on finalize. */
+export function pruneAfterRun(runId: string): void {
+  const row = historyDb.prepare('SELECT chain_id, load_test_id FROM runs WHERE id = ?').get(runId) as
+    | { chain_id: string; load_test_id: string | null }
+    | undefined;
+  if (row && !row.load_test_id) safePrune(row.chain_id);
+}
+
+export function compactHistoryDb() {
+  return compactHistory(historyDb, readRetention(db));
 }

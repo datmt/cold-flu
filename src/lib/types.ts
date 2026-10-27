@@ -118,6 +118,8 @@ export interface RunStep {
   response_headers: string | null;
   response_body: string | null;
   from_cache: boolean;
+  /** Request or response body was cut to the retention byte limit before storing. */
+  body_truncated: boolean;
   error: string | null;
   started_at: number | null;
   finished_at: number | null;

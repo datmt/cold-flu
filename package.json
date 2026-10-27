@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check": "for f in checks/*.check.mjs; do node --no-warnings \"$f\" || exit 1; done"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.5",

@@ -1,7 +1,8 @@
 import { v4 as uuid } from 'uuid';
 
 import db, { historyDb } from '@/lib/db';
-import { getGlobalFunctions } from '@/lib/db';
+import { getGlobalFunctions, getRetention, pruneAfterRun } from '@/lib/db';
+import { truncateBody } from '@/lib/db/retention';
 
 import { buildCacheKey, getCache, setCache } from './cache';
 import { parseCurl } from './curl-parser';
@@ -92,6 +93,13 @@ async function executeStepsWithDependencies(
   const execStart = Date.now();
 
   const context: ExecutionContext = { env, steps: {}, fns };
+  // Bodies are cut only when stored; later steps still see the full response via context.
+  const { maxBodyBytes } = getRetention();
+  const storeBodies = (requestBody: string, responseBody: string) => {
+    const req = truncateBody(requestBody, maxBodyBytes);
+    const res = truncateBody(responseBody, maxBodyBytes);
+    return { req: req.body, res: res.body, truncated: req.truncated || res.truncated ? 1 : 0 };
+  };
   const completed = new Set<string>();
   const failed = new Set<string>();
   const skipped = new Set<string>();
@@ -295,6 +303,8 @@ async function executeStepsWithDependencies(
           }
 
           // Treat HTTP 4xx/5xx as step failures so dependent steps are blocked
+          const stored = storeBodies(requestBody, result.body ?? '');
+
           if (step.type === 'curl' && result.status >= 400) {
             failed.add(step.id);
           historyDb.prepare(
@@ -310,6 +320,7 @@ async function executeStepsWithDependencies(
                  response_headers = ?,
                  response_body = ?,
                  from_cache = ?,
+                 body_truncated = ?,
                  finished_at = ?
              WHERE id = ?`,
           ).run(
@@ -318,11 +329,12 @@ async function executeStepsWithDependencies(
               requestMethod,
               requestUrl,
               requestHeaders,
-              requestBody,
+              stored.req,
               result.status,
               JSON.stringify(result.headers ?? {}),
-              result.body,
+              stored.res,
               fromCache,
+              stored.truncated,
               Date.now(),
               runStepId,
             );
@@ -345,6 +357,7 @@ async function executeStepsWithDependencies(
                  response_headers = ?,
                  response_body = ?,
                  from_cache = ?,
+                 body_truncated = ?,
                  finished_at = ?
              WHERE id = ?`,
           ).run(
@@ -352,17 +365,19 @@ async function executeStepsWithDependencies(
             requestMethod,
             requestUrl,
             requestHeaders,
-            requestBody,
+            stored.req,
             result.status,
             JSON.stringify(result.headers ?? {}),
-            result.body,
+            stored.res,
             fromCache,
+            stored.truncated,
             Date.now(),
             runStepId,
           );
         } catch (error) {
           dbg(`run=${runId} step="${step.name}" FAILED duration=${Date.now() - startedAt}ms err=${String(error)}`);
           failed.add(step.id);
+          const storedReq = storeBodies(requestBody, '');
           const baseMessage = error instanceof Error ? error.message : String(error);
           const cause =
             error instanceof Error && error.cause instanceof Error ? error.cause.message : null;
@@ -379,6 +394,7 @@ async function executeStepsWithDependencies(
                  request_url = ?,
                  request_headers = ?,
                  request_body = ?,
+                 body_truncated = ?,
                  finished_at = ?
              WHERE id = ?`,
           ).run(
@@ -387,7 +403,8 @@ async function executeStepsWithDependencies(
             requestMethod || null,
             requestUrl || null,
             requestHeaders || null,
-            requestBody || null,
+            storedReq.req || null,
+            storedReq.truncated,
             Date.now(),
             runStepId,
           );
@@ -424,6 +441,8 @@ async function executeStepsWithDependencies(
     );
     return status;
   })();
+
+  pruneAfterRun(runId);
 
   dbg(`run=${runId} DONE status=${finalStatus} completed=${completed.size} failed=${failed.size} skipped=${skipped.size} total_duration=${Date.now() - execStart}ms`);
   return runId;

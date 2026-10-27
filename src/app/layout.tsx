@@ -12,6 +12,7 @@ const navigation = [
   { href: '/chains', label: 'Chains' },
   { href: '/environments', label: 'Environments' },
   { href: '/functions', label: 'Global Functions' },
+  { href: '/settings', label: 'Settings' },
   { href: '/docs', label: '📖 Docs' },
 ];
 
