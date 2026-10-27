@@ -18,7 +18,7 @@ Storage stays SQLite (robust search is a core differentiator). One session = one
 | S3 | 2 Import/Export | Export v2 (condition steps + branch handles) | done — merged |
 | S4 | 2 Import/Export | Postman collection + HAR import | todo |
 | S5 | 2 Import/Export | OpenAPI import + copy-as-code | todo |
-| S6 | 3 Perf | Per-step duration + response size | todo |
+| S6 | 3 Perf | Per-step duration + response size | done — branch `s6-step-duration-size`, not merged |
 | S7 | 3 Perf | Load test stats + off UI path | todo |
 | S8 | 4 Parity | Env write-back + cookie jar + `-F @file` | todo |
 | S9 | 4 Parity | Auth helpers (OAuth2, SigV4, refresh) | todo |
@@ -94,3 +94,4 @@ Storage stays SQLite (robust search is a core differentiator). One session = one
 | 2026-10-27 | S2 | `s2-history-retention` a357200 | /settings: max runs/chain (500), max load tests/chain (10), max age (off), max body (1 MB); prune on run finish + load-test finalize; body_truncated flag; Compact = prune all + VACUUM. No history search existed to preserve. |
 | 2026-10-27 | S3 | `s3-export-v2` 3021c3d | Export v2: `depends_on: {ref, handle}[]`, condition type; import accepts v1+v2. Duplicate now keeps branch handles (was dropping them). |
 | 2026-10-27 | merge | master 7d2c1c5 | S1+S2+S3 merged locally (no conflicts), not pushed. Checks/build green on master. |
+| 2026-10-27 | S6 | `s6-step-duration-size` | `run_steps.duration_ms` (step exec time; excludes history + cache writes; set on thrown errors too) + `response_size` (UTF-8 bytes of full body, pre-truncation). RunResults shows both; old rows fall back to timestamps. S4/S5 skipped on human request ("phase 6"). |

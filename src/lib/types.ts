@@ -120,6 +120,10 @@ export interface RunStep {
   from_cache: boolean;
   /** Request or response body was cut to the retention byte limit before storing. */
   body_truncated: boolean;
+  /** Time spent executing the step itself (request, cache lookup, or script), excluding run-history writes. */
+  duration_ms: number | null;
+  /** UTF-8 byte length of the full (untruncated) decoded response body. */
+  response_size: number | null;
   error: string | null;
   started_at: number | null;
   finished_at: number | null;

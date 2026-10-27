@@ -224,6 +224,11 @@ async function executeStepsWithDependencies(
         let requestUrl = '';
         let requestHeaders = '';
         let requestBody = '';
+        // Measured after the 'running' insert so DB writes don't count toward step time.
+        const execT0 = performance.now();
+        const elapsedMs = () => Math.round(performance.now() - execT0);
+        // Set on cache miss so the setCache write isn't counted.
+        let fetchMs: number | null = null;
 
         try {
           let result: StepResult;
@@ -303,6 +308,7 @@ async function executeStepsWithDependencies(
                 };
               } else {
                 result = await fetchRequest(fetchParsed);
+                fetchMs = elapsedMs();
                 if (result.status < 500) {
                   setCache(step.id, cacheKey, result, step.cache_ttl);
                 }
@@ -311,6 +317,9 @@ async function executeStepsWithDependencies(
               result = await fetchRequest(fetchParsed);
             }
           }
+
+          const durationMs = fetchMs ?? elapsedMs();
+          const responseSize = Buffer.byteLength(result.body ?? '');
 
           // Treat HTTP 4xx/5xx as step failures so dependent steps are blocked
           const stored = storeBodies(requestBody, result.body ?? '');
@@ -331,6 +340,8 @@ async function executeStepsWithDependencies(
                  response_body = ?,
                  from_cache = ?,
                  body_truncated = ?,
+                 duration_ms = ?,
+                 response_size = ?,
                  finished_at = ?
              WHERE id = ?`,
           ).run(
@@ -345,6 +356,8 @@ async function executeStepsWithDependencies(
               stored.res,
               fromCache,
               stored.truncated,
+              durationMs,
+              responseSize,
               Date.now(),
               runStepId,
             );
@@ -368,6 +381,8 @@ async function executeStepsWithDependencies(
                  response_body = ?,
                  from_cache = ?,
                  body_truncated = ?,
+                 duration_ms = ?,
+                 response_size = ?,
                  finished_at = ?
              WHERE id = ?`,
           ).run(
@@ -381,10 +396,13 @@ async function executeStepsWithDependencies(
             stored.res,
             fromCache,
             stored.truncated,
+            durationMs,
+            responseSize,
             Date.now(),
             runStepId,
           );
         } catch (error) {
+          const durationMs = elapsedMs();
           dbg(`run=${runId} step="${step.name}" FAILED duration=${Date.now() - startedAt}ms err=${String(error)}`);
           failed.add(step.id);
           const storedReq = storeBodies(requestBody, '');
@@ -405,6 +423,7 @@ async function executeStepsWithDependencies(
                  request_headers = ?,
                  request_body = ?,
                  body_truncated = ?,
+                 duration_ms = ?,
                  finished_at = ?
              WHERE id = ?`,
           ).run(
@@ -415,6 +434,7 @@ async function executeStepsWithDependencies(
             requestHeaders || null,
             storedReq.req || null,
             storedReq.truncated,
+            durationMs,
             Date.now(),
             runStepId,
           );

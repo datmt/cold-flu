@@ -166,8 +166,17 @@ function SectionHeader({ label, copyText }: { label: string; copyText?: string }
 }
 
 function formatDuration(step: RunStep) {
+  // Older history rows predate duration_ms; fall back to wall-clock timestamps.
+  if (step.duration_ms !== null) return `${step.duration_ms}ms`;
   if (!step.started_at || !step.finished_at) return null;
   return `${Math.max(step.finished_at - step.started_at, 0)}ms`;
+}
+
+function formatSize(bytes: number | null) {
+  if (bytes === null) return null;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function statusColor(status: RunStep['status']) {
@@ -339,6 +348,11 @@ export default function RunResults({ run }: RunResultsProps) {
                 </span>
               )}
               {formatDuration(selectedStep) && <span className="text-xs text-gray-500">[{formatDuration(selectedStep)}]</span>}
+              {formatSize(selectedStep.response_size) && (
+                <span className="text-xs text-gray-500" title="Full response body size, before any history truncation">
+                  [{formatSize(selectedStep.response_size)}]
+                </span>
+              )}
             </div>
             <button
               type="button"
