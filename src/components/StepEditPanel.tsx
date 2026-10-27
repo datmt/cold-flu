@@ -346,7 +346,7 @@ function StepEditPanelContent({
           </div>
         )}
 
-        <VariableHelper envVariables={envVariables} previousStepNames={availableStepRefs} />
+        <VariableHelper envVariables={envVariables} previousStepNames={availableStepRefs} currentStepName={form.name.trim()} />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
         <p className="text-xs text-gray-500">

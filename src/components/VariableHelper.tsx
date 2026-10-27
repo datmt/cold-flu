@@ -7,6 +7,8 @@ const HELPER_VARS = ['$uuid', '$timestamp', '$isoDate', '$random'];
 interface VariableHelperProps {
   envVariables: string[];
   previousStepNames: string[];
+  /** Live name of the step being edited, so its own output syntax tracks renames as you type. */
+  currentStepName?: string;
 }
 
 function Chip({ label }: { label: string }) {
@@ -24,7 +26,7 @@ function Chip({ label }: { label: string }) {
   );
 }
 
-export default function VariableHelper({ envVariables, previousStepNames }: VariableHelperProps) {
+export default function VariableHelper({ envVariables, previousStepNames, currentStepName }: VariableHelperProps) {
   const uniqueStepNames = [...new Set(previousStepNames.filter(Boolean))].sort((a, b) =>
     a.localeCompare(b),
   );
@@ -53,6 +55,14 @@ export default function VariableHelper({ envVariables, previousStepNames }: Vari
         <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Step outputs</p>
         <p className="mt-1 text-xs text-gray-600">Array items: <code className="text-indigo-300">{'{{steps.Name.body.list[0].field}}'}</code></p>
         <p className="mt-0.5 text-xs text-gray-600">Inline JS: <code className="text-indigo-300">{'{{= Math.round(Math.random()*100) }}'}</code></p>
+        {currentStepName && (
+          <>
+            <p className="mt-2 text-xs text-gray-500">This step (use in later steps):</p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {['body', 'status', 'headers'].map((f) => <Chip key={f} label={`{{steps.${currentStepName}.${f}}}`} />)}
+            </div>
+          </>
+        )}
         <div className="mt-2 flex flex-wrap gap-2">
           {uniqueStepNames.length > 0 ? (
             uniqueStepNames.flatMap((name) => [
