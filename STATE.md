@@ -36,3 +36,5 @@ Run log: 2026-10-27 — S6 merged to master 9987cc0 (clean).
 Test evidence (master): `npm run check` → 4 ok; `tsc` only pre-existing FlowEditor.tsx:587; lint 20 problems (= baseline).
 Run log: 2026-10-27 — S8 implemented in worktree and merged to master.
 Test evidence (s8): `npm run check` → 6 ok (incl. s8-parity); `tsc --noEmit` clean; lint 20 problems (= baseline).
+
+- 2026-10-27: curl-import button (branch curl-import-button, worktree ../cold-flu-curl-import, uncommitted): "Import from cURL" in RequestEditor (chain step panel + simple view) replaces whole request; raw paste kept as template. tsc/eslint clean, `npm run check` 6+ ok. No UI click-through done; no verifier run. Not merged.
