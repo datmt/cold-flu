@@ -114,6 +114,8 @@ type RunStepRow = {
   response_body: string | null;
   from_cache: number;
   body_truncated: number;
+  duration_ms: number | null;
+  response_size: number | null;
   error: string | null;
   started_at: number | null;
   finished_at: number | null;
@@ -189,6 +191,11 @@ function initializeDatabases() {
   try {
     historyInstance.exec('ALTER TABLE run_steps ADD COLUMN body_truncated INTEGER NOT NULL DEFAULT 0');
   } catch {} // column already exists
+  for (const col of ['duration_ms INTEGER', 'response_size INTEGER']) {
+    try {
+      historyInstance.exec(`ALTER TABLE run_steps ADD COLUMN ${col}`);
+    } catch {} // column already exists
+  }
 
   // Migrate load_tests if it has a stale FK to chains (chains lives in configDb, not historyDb)
   const loadTestFks = historyInstance.pragma('foreign_key_list(load_tests)') as { table: string }[];
@@ -297,6 +304,8 @@ function mapRunStep(row: RunStepRow): RunStep {
     response_body: row.response_body,
     from_cache: Boolean(row.from_cache),
     body_truncated: Boolean(row.body_truncated),
+    duration_ms: row.duration_ms ?? null,
+    response_size: row.response_size ?? null,
     error: row.error,
     started_at: row.started_at,
     finished_at: row.finished_at,
