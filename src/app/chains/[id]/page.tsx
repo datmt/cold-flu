@@ -769,6 +769,14 @@ function LoadTestProgress({ loadTest, onDismiss, onViewRun, chainId, onStop }: {
             {((loadTest.finished_at - loadTest.started_at) / 1000).toFixed(1)}s total
           </span>
         )}
+        {loadTest.stats && loadTest.stats.p50 !== null && (
+          <span className="text-gray-400">
+            p50 {loadTest.stats.p50}ms · p95 {loadTest.stats.p95}ms · p99 {loadTest.stats.p99}ms
+          </span>
+        )}
+        {loadTest.stats && Object.entries(loadTest.stats.errors).map(([code, n]) => (
+          <span key={code} className="text-red-400">{code} ×{n}</span>
+        ))}
         {isStale && (
           <span className="text-yellow-400 text-xs self-center">
             ⚠ no progress for {secondsSinceProgress}s — executor may have stalled

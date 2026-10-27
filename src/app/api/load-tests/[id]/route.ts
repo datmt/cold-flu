@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { jsonError } from '@/lib/api';
-import { getLoadTest, listLoadTestRuns } from '@/lib/db';
+import { getLoadTest, getLoadTestStats, listLoadTestRuns } from '@/lib/db';
 
 export async function GET(
   request: Request,
@@ -18,10 +18,10 @@ export async function GET(
     const url = new URL(request.url);
     if (url.searchParams.get('runs') === '1') {
       const runs = listLoadTestRuns(id);
-      return NextResponse.json({ ...loadTest, runs });
+      return NextResponse.json({ ...loadTest, stats: getLoadTestStats(loadTest), runs });
     }
 
-    return NextResponse.json(loadTest);
+    return NextResponse.json({ ...loadTest, stats: getLoadTestStats(loadTest) });
   } catch (error) {
     return jsonError(error);
   }

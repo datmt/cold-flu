@@ -19,6 +19,7 @@ import type {
   Environment,
   Folder,
   LoadTest,
+  LoadTestStats,
   LoadTestStatus,
   RunStep,
   Step,
@@ -1202,6 +1203,37 @@ export function listLoadTestRuns(loadTestId: string, limit = 100, offset = 0): C
     )
     .all(loadTestId, limit, offset) as ChainRunRow[];
   return rows.map(mapRun);
+}
+
+/** Nearest-rank percentile of an ascending-sorted array. */
+export function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) return null;
+  return sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)];
+}
+
+export function getLoadTestStats(lt: LoadTest): LoadTestStats {
+  const ms = (
+    historyDb
+      .prepare('SELECT finished_at - started_at AS ms FROM runs WHERE load_test_id = ? AND finished_at IS NOT NULL ORDER BY ms')
+      .all(lt.id) as { ms: number }[]
+  ).map((r) => r.ms);
+  const errors: Record<string, number> = {};
+  const rows = historyDb
+    .prepare(
+      `SELECT COALESCE(CAST(rs.response_status AS TEXT), 'error') AS code, COUNT(*) AS n
+       FROM run_steps rs JOIN runs r ON r.id = rs.run_id
+       WHERE r.load_test_id = ? AND rs.status = 'failed' GROUP BY code`,
+    )
+    .all(lt.id) as { code: string; n: number }[];
+  for (const r of rows) errors[r.code] = r.n;
+  const elapsed = (lt.finished_at ?? Date.now()) - lt.started_at;
+  return {
+    p50: percentile(ms, 50),
+    p95: percentile(ms, 95),
+    p99: percentile(ms, 99),
+    rps: elapsed > 0 ? (ms.length / elapsed) * 1000 : null,
+    errors,
+  };
 }
 
 export function cancelLoadTest(id: string): boolean {

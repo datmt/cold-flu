@@ -145,6 +145,19 @@ export interface LoadTest {
   failed: number;
   started_at: number;
   finished_at: number | null;
+  /** Present on GET /api/load-tests/[id]. */
+  stats?: LoadTestStats;
+}
+
+export interface LoadTestStats {
+  /** Whole-chain run latency in ms over finished runs; null when none finished. */
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+  /** Finished runs per second over the test's elapsed time. */
+  rps: number | null;
+  /** Failed steps grouped by HTTP status ("error" = no response, e.g. network/script failure). */
+  errors: Record<string, number>;
 }
 
 export interface ApiErrorResponse {
