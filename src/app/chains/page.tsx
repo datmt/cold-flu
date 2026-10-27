@@ -20,6 +20,7 @@ export default function ChainsPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const openApiInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const loadChains = async () => {
@@ -127,6 +128,28 @@ export default function ChainsPage() {
     }
   };
 
+  const handleOpenApiFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setImporting(true);
+    setError(null);
+
+    try {
+      const res = await apiFetch<{ chain_ids: string[] }>("/api/chains/import-openapi", {
+        method: "POST",
+        body: JSON.stringify({ spec: await file.text() }),
+      });
+      // Imported requests are simple-mode (sidebar tree); full reload so the sidebar picks them up.
+      window.location.assign(res.chain_ids[0] ? `/chains/${res.chain_ids[0]}` : "/chains");
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : "Unable to import OpenAPI spec");
+      setImporting(false);
+    }
+
+    if (openApiInputRef.current) openApiInputRef.current.value = "";
+  };
+
   const folderNameById = new Map(folders.map((f) => [f.id, f.name]));
 
   const filtered = chains.filter((c) =>
@@ -163,6 +186,21 @@ export default function ChainsPage() {
             className="rounded-xl border border-gray-700 px-4 py-3 text-sm font-medium text-gray-100 transition hover:border-indigo-500 disabled:opacity-60"
           >
             {importing ? "Importing…" : "↑ Import"}
+          </button>
+          <input
+            ref={openApiInputRef}
+            type="file"
+            accept=".json,.yaml,.yml,application/json"
+            className="hidden"
+            onChange={(e) => void handleOpenApiFile(e)}
+          />
+          <button
+            type="button"
+            disabled={importing}
+            onClick={() => openApiInputRef.current?.click()}
+            className="rounded-xl border border-gray-700 px-4 py-3 text-sm font-medium text-gray-100 transition hover:border-indigo-500 disabled:opacity-60"
+          >
+            ↑ OpenAPI
           </button>
           <Link
             href="/chains/new"

@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 const HELPER_VARS = ['$uuid', '$timestamp', '$isoDate', '$random'];
 
 interface VariableHelperProps {
@@ -8,7 +10,18 @@ interface VariableHelperProps {
 }
 
 function Chip({ label }: { label: string }) {
-  return <code className="rounded bg-gray-800 px-2 py-1 text-xs text-indigo-200">{label}</code>;
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard?.writeText(label).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1000);
+    }, () => {});
+  };
+  return (
+    <button type="button" onClick={copy} title="Click to copy" className="cursor-pointer rounded bg-gray-800 px-2 py-1 text-left text-xs hover:bg-gray-700">
+      <code className={copied ? 'text-emerald-300' : 'text-indigo-200'}>{copied ? 'Copied ✓' : label}</code>
+    </button>
+  );
 }
 
 export default function VariableHelper({ envVariables, previousStepNames }: VariableHelperProps) {
