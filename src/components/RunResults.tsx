@@ -333,6 +333,11 @@ export default function RunResults({ run }: RunResultsProps) {
                 <span className="rounded bg-gray-800 px-2 py-0.5 text-xs text-gray-300">{selectedStep.response_status}</span>
               )}
               {selectedStep.from_cache && <span className="text-xs text-yellow-400">[FROM CACHE 💾]</span>}
+              {selectedStep.body_truncated && (
+                <span className="text-xs text-amber-400" title="Body cut to the history size limit (Settings)">
+                  [BODY TRUNCATED]
+                </span>
+              )}
               {formatDuration(selectedStep) && <span className="text-xs text-gray-500">[{formatDuration(selectedStep)}]</span>}
             </div>
             <button
