@@ -1,12 +1,13 @@
 import fs from 'node:fs';
 
-import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
+import { Agent, FormData, ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
 import { v4 as uuid } from 'uuid';
 
 import db, { historyDb } from '@/lib/db';
 import { getGlobalFunctions, getRetention, pruneAfterRun } from '@/lib/db';
 import { truncateBody } from '@/lib/db/retention';
 
+import { CookieJar } from './cookies';
 import { buildCacheKey, getCache, setCache } from './cache';
 import { parseCurl, type CurlOptions } from './curl-parser';
 import { interpolate, type ExecutionContext, type StepResult } from './interpolate';
@@ -87,6 +88,7 @@ async function executeStepsWithDependencies(
   env: Record<string, string>,
   fns: string,
   runId: string,
+  envId: string | null,
 ): Promise<string> {
   if (steps.length === 0) {
     throw new Error('No steps to run');
@@ -95,7 +97,22 @@ async function executeStepsWithDependencies(
   dbg(`run=${runId} start steps=${steps.length} deps=${dependencies.length}`);
   const execStart = Date.now();
 
-  const context: ExecutionContext = { env, steps: {}, fns };
+  const jar = new CookieJar();
+  const context: ExecutionContext = {
+    env,
+    steps: {},
+    fns,
+    setEnv: (name, value) => {
+      const v = String(value ?? '');
+      env[name] = v;
+      if (!envId) return;
+      // Re-read so edits made in the UI mid-run aren't overwritten.
+      const row = db.prepare('SELECT variables FROM environments WHERE id = ?').get(envId) as { variables: string } | undefined;
+      if (!row) return;
+      const vars = { ...(JSON.parse(row.variables || '{}') as Record<string, string>), [name]: v };
+      db.prepare('UPDATE environments SET variables = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(vars), Date.now(), envId);
+    },
+  };
   // Bodies are cut only when stored; later steps still see the full response via context.
   const { maxBodyBytes } = getRetention();
   const storeBodies = (requestBody: string, responseBody: string) => {
@@ -286,12 +303,17 @@ async function executeStepsWithDependencies(
               if (options[k]) options[k] = interpolate(options[k], context);
             }
 
+            const form = templateParsed.form?.map((p) => interpolate(p, context));
+            if (form) requestBody = form.join('\n');
+
             const fetchParsed = {
               method: requestMethod,
               url: requestUrl,
               headers: resolvedHeaders,
               body: requestBody || undefined,
+              form,
               options,
+              jar,
             };
 
             if (step.cache_enabled) {
@@ -527,7 +549,7 @@ export async function executeChain(chainId: string, preCreatedRunId?: string): P
     );
   }
 
-  await executeStepsWithDependencies(steps, dependencies, env, fns, runId);
+  await executeStepsWithDependencies(steps, dependencies, env, fns, runId, chain.environment_id);
   return runId;
 }
 
@@ -569,7 +591,7 @@ export function startStepExecution(stepId: string): string {
   }
 
   const { env, fns } = loadChainEnvironment(chain);
-  void executeStepsWithDependencies(stepsToRun, [], env, fns, runId);
+  void executeStepsWithDependencies(stepsToRun, [], env, fns, runId, chain.environment_id);
   return runId;
 }
 
@@ -616,12 +638,35 @@ function buildDispatcher(o: CurlOptions): Dispatcher | undefined {
   return proxy ? new ProxyAgent({ uri: proxy, requestTls: tls }) : new Agent({ connect: tls });
 }
 
+// curl -F: "name=value", "name=@file;type=t;filename=f" (upload), "name=<file" (file contents as text).
+function buildForm(parts: string[]): FormData {
+  const fd = new FormData();
+  for (const part of parts) {
+    const eq = part.indexOf('=');
+    const name = eq === -1 ? part : part.slice(0, eq);
+    const val = eq === -1 ? '' : part.slice(eq + 1);
+    if (val.startsWith('@')) {
+      const [file, ...attrs] = val.slice(1).split(';');
+      const attr = (k: string) => attrs.find((a) => a.startsWith(`${k}=`))?.slice(k.length + 1);
+      const type = attr('type');
+      fd.append(name, new Blob([fs.readFileSync(file)], type ? { type } : {}), attr('filename') ?? file.split('/').pop());
+    } else if (val.startsWith('<')) {
+      fd.append(name, fs.readFileSync(val.slice(1), 'utf8'));
+    } else {
+      fd.append(name, val);
+    }
+  }
+  return fd;
+}
+
 async function fetchRequest(parsed: {
   method: string;
   url: string;
   headers: Record<string, string>;
   body?: string;
+  form?: string[];
   options: CurlOptions;
+  jar: CookieJar;
 }): Promise<StepResult> {
   const { options } = parsed;
   const controller = new AbortController();
@@ -634,27 +679,38 @@ async function fetchRequest(parsed: {
 
   try {
     dispatcher = buildDispatcher(options);
+    const headers = { ...parsed.headers };
+    // An explicit Cookie header (-b / -H) wins over the jar.
+    if (!Object.keys(headers).some((k) => k.toLowerCase() === 'cookie')) {
+      const cookie = parsed.jar.header(parsed.url);
+      if (cookie) headers.Cookie = cookie;
+    }
+    let body: string | FormData | undefined = parsed.body || undefined;
+    if (parsed.form) {
+      body = buildForm(parsed.form);
+      // fetch must generate the multipart boundary itself.
+      for (const k of Object.keys(headers)) if (k.toLowerCase() === 'content-type') delete headers[k];
+    }
     const init = {
       method: parsed.method,
-      headers: parsed.headers,
-      body: parsed.body || undefined,
+      headers,
+      body,
       signal: controller.signal,
       // curl only follows redirects with -L; without it the 3xx itself is the result.
       redirect: options.followRedirects ? 'follow' : 'manual',
     } as const;
-    // A custom dispatcher must go through undici's own fetch; Node's bundled one may be a different version.
-    const response = dispatcher
-      ? await undiciFetch(parsed.url, { ...init, dispatcher })
-      : await fetch(parsed.url, init);
+    // undici's own fetch, so FormData and dispatcher come from the same version.
+    const response = await undiciFetch(parsed.url, { ...init, dispatcher });
     const bodyText = await response.text();
-    const headers: Record<string, string> = {};
+    const resHeaders: Record<string, string> = {};
     response.headers.forEach((value, key) => {
-      headers[key] = value;
+      resHeaders[key] = value;
     });
+    parsed.jar.store(parsed.url, response.headers.getSetCookie());
 
     return {
       status: response.status,
-      headers,
+      headers: resHeaders,
       body: bodyText,
       bodyParsed: tryParseJson(bodyText),
     };
