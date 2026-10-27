@@ -48,12 +48,12 @@ paths:
 const ok = await post(yaml);
 assert.equal(ok.status, 201);
 assert.equal(ok.body.chain_ids.length, 2);
-assert.equal(ok.body.folders, 1);
+assert.equal(ok.body.folders, 1); // tag folders, excl. API root
 const env = db.getEnvironment(ok.body.environment_id);
 assert.deepEqual(env.variables, { BASE_URL: 'https://shop.io', id: '' });
 const chains = ok.body.chain_ids.map((id) => db.getChain(id));
 assert.ok(chains.every((c) => c.mode === 'simple' && c.environment_id === env.id));
-assert.equal(chains.filter((c) => c.folder_id).length, 1);
+assert.ok(chains.every((c) => c.folder_id)); // untagged ones sit in the API root
 assert.match(chains[0].steps[0].curl_template, /\{\{env\.BASE_URL\}\}\/items\/\{\{env\.id\}\}/);
 
 assert.equal((await post('swagger: "2.0"')).status, 400);

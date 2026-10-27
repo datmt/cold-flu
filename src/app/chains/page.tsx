@@ -150,6 +150,24 @@ export default function ChainsPage() {
     if (openApiInputRef.current) openApiInputRef.current.value = "";
   };
 
+  const handleOpenApiUrl = async () => {
+    const url = window.prompt("OpenAPI spec URL (JSON or YAML)");
+    if (!url) return;
+
+    setImporting(true);
+    setError(null);
+    try {
+      const res = await apiFetch<{ chain_ids: string[] }>("/api/chains/import-openapi", {
+        method: "POST",
+        body: JSON.stringify({ url }),
+      });
+      window.location.assign(res.chain_ids[0] ? `/chains/${res.chain_ids[0]}` : "/chains");
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : "Unable to import OpenAPI spec");
+      setImporting(false);
+    }
+  };
+
   const folderNameById = new Map(folders.map((f) => [f.id, f.name]));
 
   const filtered = chains.filter((c) =>
@@ -201,6 +219,14 @@ export default function ChainsPage() {
             className="rounded-xl border border-gray-700 px-4 py-3 text-sm font-medium text-gray-100 transition hover:border-indigo-500 disabled:opacity-60"
           >
             ↑ OpenAPI
+          </button>
+          <button
+            type="button"
+            disabled={importing}
+            onClick={() => void handleOpenApiUrl()}
+            className="rounded-xl border border-gray-700 px-4 py-3 text-sm font-medium text-gray-100 transition hover:border-indigo-500 disabled:opacity-60"
+          >
+            ↑ OpenAPI URL
           </button>
           <Link
             href="/chains/new"
