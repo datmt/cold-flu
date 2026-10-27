@@ -67,6 +67,11 @@ assert.match(res('Form').body, /name="doc"; filename="hello.txt"/);
 assert.match(res('Form').body, /file-contents-42/);
 assert.match(res('Form').body, /name="title"\r\n\r\nhi/);
 
+// persistEnv=false (load tests): setEnv must leave the stored environment alone.
+db.updateEnvironment(env.id, { variables: { BASE: base } });
+await executeChain(chain.id, undefined, false);
+assert.equal(db.getEnvironment(env.id).variables.TOKEN, undefined);
+
 server.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('s8-parity ok');

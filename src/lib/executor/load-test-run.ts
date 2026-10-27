@@ -70,7 +70,8 @@ export async function runLoadTest(loadTest: LoadTest): Promise<void> {
           break;
         }
 
-        executeChain(chainId, runId)
+        // setEnv stays in-memory here: N iterations must not race on the real environment.
+        executeChain(chainId, runId, false)
           .then(() => {
             // Single transaction: read run status, read load-test status, and bump
             // the progress counter in one commit instead of three separate round trips.

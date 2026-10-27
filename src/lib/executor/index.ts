@@ -524,7 +524,7 @@ export function startChainExecution(chainId: string): string {
   return runId;
 }
 
-export async function executeChain(chainId: string, preCreatedRunId?: string): Promise<string> {
+export async function executeChain(chainId: string, preCreatedRunId?: string, persistEnv = true): Promise<string> {
   const chain = getChainRow(chainId);
   const { env, fns } = loadChainEnvironment(chain);
 
@@ -549,7 +549,7 @@ export async function executeChain(chainId: string, preCreatedRunId?: string): P
     );
   }
 
-  await executeStepsWithDependencies(steps, dependencies, env, fns, runId, chain.environment_id);
+  await executeStepsWithDependencies(steps, dependencies, env, fns, runId, persistEnv ? chain.environment_id : null);
   return runId;
 }
 
