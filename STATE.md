@@ -16,7 +16,7 @@ Last run: 2026-10-27 (L2 for S6 — human: "continue with phase 6"; merge — hu
 - Security (planned, unscheduled): server-side `new Function` + no auth + port 3000 on all interfaces. S1 adds server-side file reads for --cert/--key/--cacert paths (same trust level as above).
 - Export format now v2 (S3). Old v1 files still import.
 
-- 2026-10-27: S7 stats done on branch s7-load-test-stats (worktree ../cold-flu-s7), NOT merged. Worker-thread move NOT done.
+- 2026-10-27: S7 merged: load tests run in a worker thread (src/lib/executor/load-test-worker.mjs, loads TS via Node type stripping, needs Node >= 22.18). Dockerfile now copies src/lib; docker image NOT built/tested.
 
 ## Recent Noise (ignored this run)
 - Verifier nits left: `-m5` (attached value) only warns; `-m {{var}}` not interpolated; long run can prune itself if N newer runs started meanwhile; truncated body may end in U+FFFD.
