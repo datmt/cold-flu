@@ -61,6 +61,24 @@ function buildCurlFromParts(parts: CurlParts): string {
 export default function RequestEditor({ curlTemplate, onChange, envVariables }: RequestEditorProps) {
   const [parts, setParts] = useState<CurlParts>(() => parseCurlToParts(curlTemplate));
   const [bodyPrettyError, setBodyPrettyError] = useState<string | null>(null);
+  const [importText, setImportText] = useState<string | null>(null); // null = import box closed
+  const [importError, setImportError] = useState<string | null>(null);
+
+  // Overwrites everything. The pasted text is kept verbatim as the template so flags the form
+  // can't show (-F, -u, ...) survive until the user edits a field.
+  const applyImport = () => {
+    const text = (importText ?? '').trim();
+    try {
+      if (!parseCurl(text).url) throw new Error('No URL found');
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : 'Invalid curl');
+      return;
+    }
+    setParts(parseCurlToParts(text));
+    onChange(text);
+    setImportText(null);
+    setImportError(null);
+  };
 
   const commit = useCallback(
     (next: CurlParts) => {
@@ -111,6 +129,38 @@ export default function RequestEditor({ curlTemplate, onChange, envVariables }: 
           <option key={name} value={`{{env.${name}}}`} />
         ))}
       </datalist>
+
+      {/* Import from curl */}
+      <div>
+        <button
+          type="button"
+          onClick={() => { setImportText(importText === null ? '' : null); setImportError(null); }}
+          className="rounded px-2 py-0.5 text-xs text-indigo-400 hover:bg-gray-800 hover:text-indigo-300"
+        >
+          ⤓ Import from cURL
+        </button>
+        {importText !== null && (
+          <div className="mt-1.5 space-y-1.5">
+            <textarea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              placeholder="curl -X POST https://api.example.com -H 'Content-Type: application/json' -d '{}'"
+              rows={5}
+              className={`w-full ${inputCls} font-mono`}
+            />
+            <p className="text-xs text-amber-300">Replaces method, URL, headers, body and flags of this request.</p>
+            {importError && <p className="text-xs text-red-400">{importError}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={applyImport} className="rounded bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-500">
+                Replace
+              </button>
+              <button type="button" onClick={() => { setImportText(null); setImportError(null); }} className="rounded px-3 py-1 text-xs text-gray-400 hover:bg-gray-800">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Method + URL */}
       <div>
