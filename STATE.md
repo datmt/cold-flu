@@ -1,11 +1,10 @@
 # Loop State — ColdFlu
 
-Last run: 2026-10-27 (L2 for S6 — human: "continue with phase 6")
+Last run: 2026-10-27 (L2 for S6 — human: "continue with phase 6"; merge — human: "merge to main")
 
 ## High Priority (loop is acting or waiting on human)
-- S1, S2, S3 merged into local master (7d2c1c5 + check fix). NOT pushed — needs human approval.
-- Worktrees ../cold-flu-s1, -s2, -s3 and branches still exist; remove once happy.
-- S6 done on branch `s6-step-duration-size` (worktree ../cold-flu-s6), verifier PASS. Merge needs human approval.
+- S1, S2, S3, S6 merged into local master (S6: 9987cc0). NOT pushed — needs human approval.
+- Worktrees ../cold-flu-s1, -s2, -s3, -s6 and branches still exist; remove once happy.
 - S4, S5 still todo (skipped by request). S7 (load test stats) now unblocked.
 
 ## Watch List
@@ -31,3 +30,5 @@ Run log: 2026-10-27 — S3 implemented in worktree, merged S1+S2+S3 to master (c
 Test evidence (master): `npm run check` → curl-parser ok, export-v2 ok, retention ok; `npm run build` green; lint 20 problems (= baseline).
 Run log: 2026-10-27 — S6 implemented in worktree; verifier PASS (one minor: cache write counted in duration on miss — fixed).
 Test evidence (s6): `npm run check` → curl-parser, export-v2, retention, step-metrics ok; `tsc --noEmit` only pre-existing FlowEditor.tsx:587; lint 20 problems (= baseline). `next build` blocked by that pre-existing xyflow error.
+Run log: 2026-10-27 — S6 merged to master 9987cc0 (clean).
+Test evidence (master): `npm run check` → 4 ok; `tsc` only pre-existing FlowEditor.tsx:587; lint 20 problems (= baseline).
