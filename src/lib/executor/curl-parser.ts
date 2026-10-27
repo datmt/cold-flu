@@ -3,7 +3,43 @@ export interface ParsedRequest {
   url: string;
   headers: Record<string, string>;
   body?: string;
+  options: CurlOptions;
+  /** Flags present in the command that the executor does not honor. */
+  warnings: string[];
 }
+
+/** Transport flags the executor honors. Seconds for times, file paths for TLS material. */
+export interface CurlOptions {
+  insecure?: boolean;
+  followRedirects?: boolean;
+  maxTime?: number;
+  connectTimeout?: number;
+  proxy?: string;
+  cert?: string;
+  key?: string;
+  cacert?: string;
+}
+
+/** Inverse of parsing: options back to curl flags (used when the UI rebuilds a template). */
+export function optionsToFlags(o: CurlOptions): string[] {
+  const q = (v: string) => `'${v.replace(/'/g, "'\\''")}'`;
+  const flags: string[] = [];
+  if (o.followRedirects) flags.push("-L");
+  if (o.insecure) flags.push("-k");
+  if (o.maxTime !== undefined) flags.push(`-m ${o.maxTime}`);
+  if (o.connectTimeout !== undefined) flags.push(`--connect-timeout ${o.connectTimeout}`);
+  if (o.proxy) flags.push(`-x ${q(o.proxy)}`);
+  if (o.cacert) flags.push(`--cacert ${q(o.cacert)}`);
+  if (o.cert) flags.push(`--cert ${q(o.cert)}`);
+  if (o.key) flags.push(`--key ${q(o.key)}`);
+  return flags;
+}
+
+// Ignored flags that change nothing about the request we send — no warning for these.
+const HARMLESS_FLAGS = new Set([
+  "-s", "--silent", "-S", "--show-error", "-v", "--verbose", "--compressed",
+  "-g", "--globoff", "-N", "--no-buffer", "-o", "--output", "-w", "--write-out",
+]);
 
 function normalizeCurl(curlStr: string): string {
   // Newlines stay: quoted bodies keep them, bare ones are whitespace to the tokenizer,
@@ -189,12 +225,34 @@ export function parseCurl(curlStr: string): ParsedRequest {
   const formParts: string[] = [];
   const urlEncodeParams: string[] = [];
   let useGet = false;
+  const options: CurlOptions = {};
+  const warnings: string[] = [];
+  const seconds = (flag: string, raw: string | undefined): number | undefined => {
+    const n = Number(raw);
+    if (raw !== undefined && Number.isFinite(n) && n > 0) return n;
+    warnings.push(`Invalid value for ${flag}: ${raw ?? "(missing)"}`);
+    return undefined;
+  };
 
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
 
-    if (NO_VALUE_FLAGS.has(token)) continue;
-    if (ONE_VALUE_IGNORE_FLAGS.has(token)) { i++; continue; }
+    switch (token) {
+      case "-k": case "--insecure": options.insecure = true; continue;
+      case "-L": case "--location": case "--location-trusted": options.followRedirects = true; continue;
+      case "-m": case "--max-time": options.maxTime = seconds(token, tokens[++i]); continue;
+      case "--connect-timeout": options.connectTimeout = seconds(token, tokens[++i]); continue;
+      case "-x": case "--proxy": options.proxy = tokens[++i]; continue;
+      case "--cert": options.cert = tokens[++i]; continue;
+      case "--key": options.key = tokens[++i]; continue;
+      case "--cacert": options.cacert = tokens[++i]; continue;
+    }
+
+    if (NO_VALUE_FLAGS.has(token) || ONE_VALUE_IGNORE_FLAGS.has(token)) {
+      if (!HARMLESS_FLAGS.has(token)) warnings.push(`Ignored curl flag: ${token}`);
+      if (ONE_VALUE_IGNORE_FLAGS.has(token)) i++;
+      continue;
+    }
 
     switch (token) {
       case "-X":
@@ -294,6 +352,8 @@ export function parseCurl(curlStr: string): ParsedRequest {
       default:
         if (!token.startsWith("-") && !url) {
           url = token;
+        } else if (token.startsWith("-")) {
+          warnings.push(`Unknown curl flag: ${token}`);
         }
         break;
     }
@@ -312,7 +372,7 @@ export function parseCurl(curlStr: string): ParsedRequest {
     if (qParts.length > 0) {
       url += (url.includes("?") ? "&" : "?") + qParts.join("&");
     }
-    return { method: "GET", url, headers, body: undefined };
+    return { method: "GET", url, headers, body: undefined, options, warnings };
   }
 
   const allBodyParts = [...bodyParts, ...urlEncodeParams];
@@ -333,5 +393,7 @@ export function parseCurl(curlStr: string): ParsedRequest {
     url,
     headers,
     body,
+    options,
+    warnings,
   };
 }

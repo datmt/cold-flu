@@ -82,6 +82,7 @@ const TOC = [
   { id: 'transform', label: 'Transform steps (JS)' },
   { id: 'dag', label: 'DAG & parallel execution' },
   { id: 'cache', label: 'Caching' },
+  { id: 'curl-flags', label: 'Curl flags' },
 ];
 
 export default function DocsPage() {
@@ -364,7 +365,7 @@ Wave 2:  [Summary]            ← depends on GetUser + GetOrg, runs after both`}
       <Section id="cache" title="10. Caching">
         <p className="text-gray-300">
           Enable caching on any Curl step to reuse the last response and skip the actual HTTP request.
-          The cache key is a SHA-256 hash of <Code>method + url + headers + body</Code> after
+          The cache key is a SHA-256 hash of <Code>method + url + headers + body + curl flags</Code> after
           interpolation.
         </p>
         <div className="space-y-3 text-gray-300">
@@ -384,6 +385,26 @@ Wave 2:  [Summary]            ← depends on GetUser + GetOrg, runs after both`}
             Steps served from cache show a <Code>💾 FROM CACHE</Code> badge in the run results.
           </p>
         </div>
+      </Section>
+
+      {/* ── Curl flags ─────────────────────────────────────────── */}
+      <Section id="curl-flags" title="11. Curl flags">
+        <p className="text-gray-300">These transport flags are honored like real curl:</p>
+        <ul className="list-disc space-y-1 pl-6 text-gray-300">
+          <li><Code>-L</Code> / <Code>--location</Code> — follow redirects.</li>
+          <li><Code>-k</Code> / <Code>--insecure</Code> — skip TLS certificate checks.</li>
+          <li><Code>-m</Code> / <Code>--max-time</Code> — total timeout in seconds (default 30).</li>
+          <li><Code>--connect-timeout</Code> — connection timeout in seconds.</li>
+          <li><Code>-x</Code> / <Code>--proxy</Code> — HTTP(S) proxy URL.</li>
+          <li><Code>--cacert</Code>, <Code>--cert</Code>, <Code>--key</Code> — PEM file paths on the server.</li>
+        </ul>
+        <Note>
+          Without <Code>-L</Code>, a redirect is <strong>not</strong> followed: the step returns the 3xx response
+          itself, same as curl. Older steps that relied on automatic redirects need <Code>-L</Code> added.
+        </Note>
+        <p className="text-gray-300">
+          Other flags are ignored. The step editor shows a warning for each one that changes the request.
+        </p>
       </Section>
     </div>
   );

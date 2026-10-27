@@ -20,8 +20,11 @@ export function buildCacheKey(
   url: string,
   headers: Record<string, string>,
   body?: string,
+  // Transport flags (-L, -k, ...) change the response, so they are part of the key.
+  options?: object,
 ): string {
   return JSON.stringify({
+    options,
     method: method.toUpperCase(),
     url,
     headers: Object.entries(headers)

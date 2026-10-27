@@ -8,7 +8,7 @@ import { isJsonLike, prettyJsonLike } from '@/lib/formatters';
 import { bracketMatching } from '@codemirror/language';
 import { lineNumbers } from '@codemirror/view';
 
-import { parseCurl } from '@/lib/executor/curl-parser';
+import { optionsToFlags, parseCurl, type CurlOptions } from '@/lib/executor/curl-parser';
 
 interface RequestEditorProps {
   curlTemplate: string;
@@ -21,6 +21,9 @@ interface CurlParts {
   url: string;
   headers: { key: string; value: string }[];
   body: string;
+  // Transport flags (-L, -k, -m, ...) have no form fields; carried through so edits don't drop them.
+  options: CurlOptions;
+  warnings: string[];
 }
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
@@ -33,14 +36,17 @@ function parseCurlToParts(curlTemplate: string): CurlParts {
       url: parsed.url,
       headers: Object.entries(parsed.headers).map(([key, value]) => ({ key, value })),
       body: parsed.body ?? '',
+      options: parsed.options,
+      warnings: parsed.warnings,
     };
   } catch {
-    return { method: 'GET', url: '', headers: [], body: '' };
+    return { method: 'GET', url: '', headers: [], body: '', options: {}, warnings: [] };
   }
 }
 
 function buildCurlFromParts(parts: CurlParts): string {
   const lines: string[] = [`curl -X ${parts.method || 'GET'} '${parts.url || ''}'`];
+  for (const flag of optionsToFlags(parts.options)) lines.push(`  ${flag}`);
   for (const h of parts.headers) {
     // JSON.stringify produces a double-quoted, fully-escaped string — safe for any value
     if (h.key) lines.push(`  -H ${JSON.stringify(`${h.key}: ${h.value}`)}`);
@@ -92,6 +98,13 @@ export default function RequestEditor({ curlTemplate, onChange, envVariables }: 
 
   return (
     <div className="space-y-3">
+      {parts.warnings.length > 0 && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-200">
+          {parts.warnings.map((w, i) => (
+            <div key={i}>⚠ {w}</div>
+          ))}
+        </div>
+      )}
       {/* Autocomplete source for env var interpolation tokens across URL + header values */}
       <datalist id={envVarListId}>
         {envVariables.map((name) => (
