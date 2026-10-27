@@ -94,6 +94,10 @@ export default function FlowEditor({
   const [graphError, setGraphError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const didHydrate = useRef(false);
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
 
   useEffect(() => {
     setNodes(initialNodes as FlowNode[]);
@@ -205,11 +209,18 @@ export default function FlowEditor({
         position_y?: number;
       },
     ) => {
+      const oldName = nodesRef.current.find((n) => n.id === stepId)?.data.step.name;
       const updatedStep = await apiFetch<Step>(`/api/steps/${stepId}`, {
         method: 'PUT',
         body: JSON.stringify(updates),
       });
       upsertNode(updatedStep);
+      // Server rewrote `steps.<old>.` refs in sibling steps; pull them so a later auto-save can't revert them.
+      if (oldName && oldName !== updatedStep.name) {
+        const siblings = nodesRef.current.filter((n) => n.id !== stepId);
+        const fresh = await Promise.all(siblings.map((n) => apiFetch<Step>(`/api/steps/${n.id}`)));
+        fresh.forEach(upsertNode);
+      }
       return updatedStep;
     },
     [upsertNode],

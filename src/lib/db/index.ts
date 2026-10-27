@@ -872,8 +872,25 @@ export function updateStep(
     id,
   );
 
+  if (input.name && input.name !== existing.name) renameStepRefs(existing.chain_id, existing.name, input.name);
+
   touchChain(existing.chain_id, now);
   return getStep(id);
+}
+
+/** After a rename, rewrite `steps.<old>.` references in the chain's templates and code. Returns ids of changed steps. */
+function renameStepRefs(chainId: string, from: string, to: string): string[] {
+  const re = new RegExp(`(?<![\\w$])(steps\\.)${from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=\\.)`, 'g');
+  const upd = db.prepare('UPDATE steps SET curl_template = ?, transform_code = ? WHERE id = ?');
+  const changed: string[] = [];
+  for (const row of getChainStepRows(chainId)) {
+    const curl = row.curl_template.replace(re, () => `steps.${to}`);
+    const code = (row.transform_code ?? '').replace(re, () => `steps.${to}`);
+    if (curl === row.curl_template && code === (row.transform_code ?? '')) continue;
+    upd.run(curl, code, row.id);
+    changed.push(row.id);
+  }
+  return changed;
 }
 
 export function deleteStep(id: string): boolean {

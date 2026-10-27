@@ -17,7 +17,7 @@ Storage stays SQLite (robust search is a core differentiator). One session = one
 | S2 | 1 Bugs | History retention | done — merged |
 | S3 | 2 Import/Export | Export v2 (condition steps + branch handles) | done — merged |
 | S4 | 2 Import/Export | Postman collection + HAR import | todo |
-| S5 | 2 Import/Export | OpenAPI import + copy-as-code | todo |
+| S5 | 2 Import/Export | OpenAPI import + copy-as-code | OpenAPI import done (unmerged); copy-as-code todo |
 | S6 | 3 Perf | Per-step duration + response size | done — merged |
 | S7 | 3 Perf | Load test stats + off UI path | done — merged |
 | S8 | 4 Parity | Env write-back + cookie jar + `-F @file` | done — merged |
@@ -97,3 +97,4 @@ Storage stays SQLite (robust search is a core differentiator). One session = one
 | 2026-10-27 | S6 | `s6-step-duration-size` | `run_steps.duration_ms` (step exec time; excludes history + cache writes; set on thrown errors too) + `response_size` (UTF-8 bytes of full body, pre-truncation). RunResults shows both; old rows fall back to timestamps. S4/S5 skipped on human request ("phase 6"). |
 | 2026-10-27 | merge | master 9987cc0 | S6 merged locally (no conflicts), not pushed. Checks green; build blocked by pre-existing xyflow 12.11.0 typecheck error. |
 | 2026-10-27 | S8 | `s8-env-cookies-upload` | `context.setEnv(name, value)` in transform steps persists to the chain's environment. Per-run cookie jar (host + path match; explicit Cookie header wins). `-F name=@file;type=;filename=` and `name=<file` send real multipart. Fetch always via undici. |
+| 2026-10-27 | S5 (OpenAPI half) | `s5-openapi-import` | /chains "↑ OpenAPI": 3.x JSON/YAML -> simple chains per op, folder per tag, env w/ BASE_URL + path params, body examples from schema. Also: step rename rewrites `steps.<old>.` refs in sibling steps; helper chips copy on click. Verifier PASS. |
