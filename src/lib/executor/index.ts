@@ -1,10 +1,13 @@
+import fs from 'node:fs';
+
+import { Agent, ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
 import { v4 as uuid } from 'uuid';
 
 import db, { historyDb } from '@/lib/db';
 import { getGlobalFunctions } from '@/lib/db';
 
 import { buildCacheKey, getCache, setCache } from './cache';
-import { parseCurl } from './curl-parser';
+import { parseCurl, type CurlOptions } from './curl-parser';
 import { interpolate, type ExecutionContext, type StepResult } from './interpolate';
 
 type ChainRow = {
@@ -264,15 +267,22 @@ async function executeStepsWithDependencies(
             // resolvedCurl is stored for display only
             resolvedCurl = interpolate(step.curl_template, context);
 
+            // Paths and proxy URLs may reference env vars too.
+            const options: CurlOptions = { ...templateParsed.options };
+            for (const k of ['proxy', 'cert', 'key', 'cacert'] as const) {
+              if (options[k]) options[k] = interpolate(options[k], context);
+            }
+
             const fetchParsed = {
               method: requestMethod,
               url: requestUrl,
               headers: resolvedHeaders,
               body: requestBody || undefined,
+              options,
             };
 
             if (step.cache_enabled) {
-              const cacheKey = buildCacheKey(fetchParsed.method, fetchParsed.url, fetchParsed.headers, fetchParsed.body);
+              const cacheKey = buildCacheKey(fetchParsed.method, fetchParsed.url, fetchParsed.headers, fetchParsed.body, options);
               const cached = getCache(step.id, cacheKey);
 
               if (cached) {
@@ -547,22 +557,56 @@ function recordSkippedStep(runId: string, step: StepRow, waveIndex: number) {
   ).run(uuid(), runId, step.id, step.name, waveIndex, Date.now(), Date.now());
 }
 
+// No -m flag keeps the app's historical 30s cap (curl itself has none).
+const DEFAULT_TIMEOUT_MS = 30000;
+
+// ponytail: new Agent per request, so -k/-x/cert steps redo TLS every call; cache by options if load tests need it.
+function buildDispatcher(o: CurlOptions): Dispatcher | undefined {
+  if (!o.insecure && !o.proxy && !o.cert && !o.key && !o.cacert && o.connectTimeout === undefined) {
+    return undefined;
+  }
+  const tls = {
+    rejectUnauthorized: !o.insecure,
+    ca: o.cacert ? fs.readFileSync(o.cacert) : undefined,
+    cert: o.cert ? fs.readFileSync(o.cert) : undefined,
+    key: o.key ? fs.readFileSync(o.key) : undefined,
+    timeout: o.connectTimeout !== undefined ? o.connectTimeout * 1000 : undefined,
+  };
+  // curl defaults a scheme-less proxy ("host:8080") to http://; undici requires the scheme.
+  const proxy = o.proxy && !o.proxy.includes('://') ? `http://${o.proxy}` : o.proxy;
+  return proxy ? new ProxyAgent({ uri: proxy, requestTls: tls }) : new Agent({ connect: tls });
+}
+
 async function fetchRequest(parsed: {
   method: string;
   url: string;
   headers: Record<string, string>;
   body?: string;
+  options: CurlOptions;
 }): Promise<StepResult> {
+  const { options } = parsed;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
+  const timeoutMs = options.maxTime !== undefined ? options.maxTime * 1000 : DEFAULT_TIMEOUT_MS;
+  const timeout = setTimeout(
+    () => controller.abort(new Error(`Request timed out after ${timeoutMs / 1000}s`)),
+    timeoutMs,
+  );
+  let dispatcher: Dispatcher | undefined;
 
   try {
-    const response = await fetch(parsed.url, {
+    dispatcher = buildDispatcher(options);
+    const init = {
       method: parsed.method,
       headers: parsed.headers,
       body: parsed.body || undefined,
       signal: controller.signal,
-    });
+      // curl only follows redirects with -L; without it the 3xx itself is the result.
+      redirect: options.followRedirects ? 'follow' : 'manual',
+    } as const;
+    // A custom dispatcher must go through undici's own fetch; Node's bundled one may be a different version.
+    const response = dispatcher
+      ? await undiciFetch(parsed.url, { ...init, dispatcher })
+      : await fetch(parsed.url, init);
     const bodyText = await response.text();
     const headers: Record<string, string> = {};
     response.headers.forEach((value, key) => {
@@ -577,6 +621,7 @@ async function fetchRequest(parsed: {
     };
   } finally {
     clearTimeout(timeout);
+    void dispatcher?.close();
   }
 }
 
