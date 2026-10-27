@@ -10,8 +10,6 @@ Last run: 2026-10-27 (L2 for S6 — human: "continue with phase 6"; merge — hu
 ## Watch List
 - Behavior change (S1): steps without `-L` no longer follow redirects; they return the 3xx.
 - Behavior change (S2): defaults start pruning on first run per chain (keeps newest 500 runs, 10 load tests; bodies cut at 1 MB).
-- `pnpm-lock.yaml` on master resolves @xyflow/react 12.11.0, which fails typecheck (FlowEditor.tsx:587). npm/package-lock (used by Dockerfile) pins 12.10.2 and builds. Pre-existing.
-- 2026-10-27: outside `pnpm install` (not the loop) replaced node_modules with pnpm layout: @xyflow/react now 12.11.0 → `next build` fails typecheck at FlowEditor.tsx:587 on master too; better-sqlite3 unbuilt (`allowBuilds: false`) — loop copied old binary from `.ignored_better-sqlite3` into pnpm dir so checks run.
 - Turbopack rejects symlinked node_modules in worktrees; use `cp -al` hardlink copy.
 - Fresh-DB `next build` can hit SQLITE_BUSY (parallel workers); rerun passes. Pre-existing.
 - Lint baseline: 20 problems (16 errors) on master, all pre-existing.

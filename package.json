@@ -17,7 +17,7 @@
     "@codemirror/view": "^6.43.1",
     "@types/prismjs": "^1.26.6",
     "@uiw/react-codemirror": "^4.25.10",
-    "@xyflow/react": "^12.10.2",
+    "@xyflow/react": "12.10.2",
     "better-sqlite3": "^12.10.0",
     "next": "16.2.6",
     "prismjs": "^1.30.0",
