@@ -9,9 +9,13 @@ import path from 'node:path';
 const src = new URL('../src/', import.meta.url);
 registerHooks({
   resolve(spec, ctx, next) {
-    if (spec.startsWith('@/')) {
-      const file = new URL(`${spec.slice(2)}.ts`, src);
-      spec = (fs.existsSync(file) ? file : new URL(`${spec.slice(2)}/index.ts`, src)).href;
+    // Mimic the TS bundler resolver: `@/` alias and extensionless relative imports.
+    const base = spec.startsWith('@/') ? new URL(spec.slice(2), src)
+      : spec.startsWith('.') && ctx.parentURL?.endsWith('.ts') && !path.extname(spec) ? new URL(spec, ctx.parentURL)
+      : null;
+    if (base) {
+      const file = new URL(`${base.href}.ts`);
+      spec = (fs.existsSync(file) ? file : new URL(`${base.href}/index.ts`)).href;
     }
     return next(spec, ctx);
   },
