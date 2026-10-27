@@ -3,6 +3,8 @@ export interface ParsedRequest {
   url: string;
   headers: Record<string, string>;
   body?: string;
+  /** Raw -F parts ("name=value", "name=@file;type=x"); the executor sends these as multipart. */
+  form?: string[];
   options: CurlOptions;
   /** Flags present in the command that the executor does not honor. */
   warnings: string[];
@@ -393,6 +395,7 @@ export function parseCurl(curlStr: string): ParsedRequest {
     url,
     headers,
     body,
+    form: formParts.length > 0 ? formParts : undefined,
     options,
     warnings,
   };

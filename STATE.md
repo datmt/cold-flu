@@ -1,6 +1,6 @@
 # Loop State — ColdFlu
 
-Last run: 2026-10-27 (L2 for S6 — human: "continue with phase 6"; merge — human: "merge to main")
+Last run: 2026-10-27 (L2 for S8 — human: "start s8", "merge s8 to master"; earlier S6 — human: "continue with phase 6"; merge — human: "merge to main")
 
 ## High Priority (loop is acting or waiting on human)
 - S1, S2, S3, S6 merged into local master (S6: 9987cc0). NOT pushed — needs human approval.
@@ -18,6 +18,8 @@ Last run: 2026-10-27 (L2 for S6 — human: "continue with phase 6"; merge — hu
 
 - 2026-10-27: S7 merged: load tests run in a worker thread (src/lib/executor/load-test-worker.mjs, loads TS via Node type stripping, needs Node >= 22.18). Dockerfile now copies src/lib; docker image NOT built/tested.
 
+- 2026-10-27: S8 merged: setEnv write-back, per-run cookie jar (host+path only, no Domain/Secure), `-F @file` multipart. Cache key for -F steps uses file path, not contents. Verifier sub-agent was launched but had not reported at merge time. Worktree ../cold-flu-s8 still exists.
+
 ## Recent Noise (ignored this run)
 - Verifier nits left: `-m5` (attached value) only warns; `-m {{var}}` not interpolated; long run can prune itself if N newer runs started meanwhile; truncated body may end in U+FFFD.
 
@@ -32,3 +34,5 @@ Run log: 2026-10-27 — S6 implemented in worktree; verifier PASS (one minor: ca
 Test evidence (s6): `npm run check` → curl-parser, export-v2, retention, step-metrics ok; `tsc --noEmit` only pre-existing FlowEditor.tsx:587; lint 20 problems (= baseline). `next build` blocked by that pre-existing xyflow error.
 Run log: 2026-10-27 — S6 merged to master 9987cc0 (clean).
 Test evidence (master): `npm run check` → 4 ok; `tsc` only pre-existing FlowEditor.tsx:587; lint 20 problems (= baseline).
+Run log: 2026-10-27 — S8 implemented in worktree and merged to master.
+Test evidence (s8): `npm run check` → 6 ok (incl. s8-parity); `tsc --noEmit` clean; lint 20 problems (= baseline).

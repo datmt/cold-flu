@@ -10,6 +10,8 @@ export interface ExecutionContext {
   steps: Record<string, StepResult>;
   /** Combined global + environment function source, prepended when evaluating JS. */
   fns: string;
+  /** Transform steps call this to set an env var; the executor persists it to the chain's environment. */
+  setEnv?: (name: string, value: unknown) => void;
 }
 
 function getValueAtPath(value: unknown, path: string) {
