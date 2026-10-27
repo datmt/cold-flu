@@ -1053,7 +1053,7 @@ export function exportChain(id: string): ChainExport | null {
   }
 
   return {
-    version: 1,
+    version: 2,
     name: detail.name,
     description: detail.description,
     mode: detail.mode,
@@ -1068,7 +1068,10 @@ export function exportChain(id: string): ChainExport | null {
         cache_ttl: step.cache_ttl,
         position_x: step.position_x,
         position_y: step.position_y,
-        depends_on: step.depends_on ?? [],
+        depends_on: (step.depends_on ?? []).map((ref) => ({
+          ref,
+          handle: step.dependency_handles?.[ref] ?? null,
+        })),
       }),
     ),
   };
@@ -1105,13 +1108,12 @@ export function importChain(payload: ChainExport): ChainDetail {
       const stepId = refToId.get(s.ref);
       if (!stepId) continue;
 
-      for (const depRef of s.depends_on) {
-        const depId = refToId.get(depRef);
+      for (const dep of s.depends_on) {
+        const depId = refToId.get(dep.ref);
         if (depId) {
-          db.prepare('INSERT OR IGNORE INTO step_dependencies (step_id, depends_on_step_id) VALUES (?, ?)').run(
-            stepId,
-            depId,
-          );
+          db.prepare(
+            'INSERT OR IGNORE INTO step_dependencies (step_id, depends_on_step_id, source_handle) VALUES (?, ?, ?)',
+          ).run(stepId, depId, dep.handle);
         }
       }
     }

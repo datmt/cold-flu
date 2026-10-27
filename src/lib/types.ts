@@ -156,11 +156,18 @@ export interface ChainExportStep {
   cache_ttl: number;
   position_x: number;
   position_y: number;
-  depends_on: string[];
+  /** `handle` is the source handle on the dependency ('true'/'false' for condition branches, null otherwise). */
+  depends_on: ChainExportDependency[];
 }
 
+export interface ChainExportDependency {
+  ref: string;
+  handle: string | null;
+}
+
+/** v2 adds condition steps and branch handles. Import also accepts v1 (`depends_on: string[]`). */
 export interface ChainExport {
-  version: 1;
+  version: 2;
   name: string;
   description: string;
   mode: ChainMode;
