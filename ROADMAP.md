@@ -19,7 +19,7 @@ Storage stays SQLite (robust search is a core differentiator). One session = one
 | S4 | 2 Import/Export | Postman collection + HAR import | todo |
 | S5 | 2 Import/Export | OpenAPI import + copy-as-code | todo |
 | S6 | 3 Perf | Per-step duration + response size | done — merged |
-| S7 | 3 Perf | Load test stats + off UI path | partial (stats done, worker thread todo) |
+| S7 | 3 Perf | Load test stats + off UI path | done — merged |
 | S8 | 4 Parity | Env write-back + cookie jar + `-F @file` | todo |
 | S9 | 4 Parity | Auth helpers (OAuth2, SigV4, refresh) | todo |
 | S10 | 4 Parity | Scheduled runs + failure alerts | todo |
